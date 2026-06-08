@@ -4,6 +4,6 @@ FROM nousresearch/hermes-agent@sha256:3326d81d12518be9b3ada3546b4abf97c2ac663e72
 
 CMD ["gateway", "run"]
 
-// FROM nousresearch/hermes-agent:latest
+#FROM nousresearch/hermes-agent:latest
 
-//CMD ["gateway", "run"]
+#CMD ["gateway", "run"]
