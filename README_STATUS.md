@@ -83,7 +83,8 @@ Reload MCP inside a Hermes session:
 ## Next tasks
 
 1. Define Hermes role / SOUL for the AstroGeo / AstroFest context.
-2. Define first real memory scenario: user asks an astrology question, Hermes searches GBrain, answers using retrieved context.
-3. Add access policy layer for future multi-user use: user id, role, tariff, allowed projects, allowed knowledge bases, allowed objects.
-4. Decide where custom AstroFest / Hermes policy code will live. Do not put private business logic into this public wrapper repository.
-5. Rotate the temporary GBrain token before any production or external access.
+2. Apply [HERMES_SOURCE_ROUTING_POLICY.md](/Users/dbashkirtsev/Desktop/cline-sandbox/tp_Hermes%20Agent/docs/HERMES_SOURCE_ROUTING_POLICY.md) in Hermes system prompt or caller-side prompt injection.
+3. Define first real memory scenario: user asks an astrology question, Hermes searches GBrain, answers using retrieved context.
+4. Add access policy layer for future multi-user use: user id, role, tariff, allowed projects, allowed knowledge bases, allowed objects.
+5. Decide where custom AstroFest / Hermes policy code will live. Do not put private business logic into this public wrapper repository.
+6. Rotate the temporary GBrain token before any production or external access.

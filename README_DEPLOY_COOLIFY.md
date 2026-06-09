@@ -57,3 +57,14 @@ mcp_servers:
 ```
 
 The current GBrain token used during testing must be revoked and replaced before production.
+
+## Source routing policy
+
+Routing between `GBrain`, `tp_knowledge`, and `Linear` is documented in:
+
+- [docs/HERMES_SOURCE_ROUTING_POLICY.md](/Users/dbashkirtsev/Desktop/cline-sandbox/tp_Hermes%20Agent/docs/HERMES_SOURCE_ROUTING_POLICY.md)
+
+Recommended deployment approach:
+
+- add the routing block from that document into Hermes system instructions or SOUL prompt;
+- if runtime-level prompt customization is not available, inject the same block from the caller that sends `messages` to Hermes.
