@@ -46,13 +46,6 @@ if [ "${1:-}" = "hermes" ] && [ "${2:-}" = "gateway" ] && [ "${3:-}" = "run" ]; 
       set -- "$@" --no-supervise
       ;;
   esac
-  case " $* " in
-    *" --external-supervisor "*)
-      ;;
-    *)
-      set -- "$@" --external-supervisor
-      ;;
-  esac
 fi
 
 case "${TP_KNOWLEDGE_MCP_ENABLED}" in

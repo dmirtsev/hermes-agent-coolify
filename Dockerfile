@@ -7,4 +7,4 @@ COPY hermes_basic_auth_proxy.py /hermes_basic_auth_proxy.py
 RUN chmod +x /entrypoint.sh
 
 ENTRYPOINT ["/entrypoint.sh"]
-CMD ["hermes", "gateway", "run", "--no-supervise", "--external-supervisor"]
+CMD ["hermes", "gateway", "run", "--no-supervise"]
