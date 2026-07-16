@@ -53,43 +53,69 @@ case "${TP_KNOWLEDGE_MCP_ENABLED}" in
 import os
 from pathlib import Path
 
-import yaml
-
 config_path = Path(os.environ["TP_KNOWLEDGE_MCP_CONFIG_PATH"])
 server_name = os.environ["TP_KNOWLEDGE_MCP_NAME"]
 server_url = os.environ["TP_KNOWLEDGE_MCP_URL"]
 
-if config_path.exists():
-    with config_path.open("r", encoding="utf-8") as fh:
-        config = yaml.safe_load(fh) or {}
-else:
-    config = {}
-
-if not isinstance(config, dict):
-    raise SystemExit("Hermes config root must be a mapping")
-
-mcp_servers = config.setdefault("mcp_servers", {})
-if not isinstance(mcp_servers, dict):
-    raise SystemExit("Hermes config mcp_servers must be a mapping")
-
-mcp_servers[server_name] = {
-    "url": server_url,
-    "headers": {
-        "Authorization": "Bearer ${TP_KNOWLEDGE_MCP_TOKEN}",
-    },
-    "enabled": True,
-    "connect_timeout": 60,
-    "timeout": 300,
-    "tools": {
-        "include": ["knowledge_answer_context"],
-        "resources": False,
-        "prompts": False,
-    },
-}
-
 config_path.parent.mkdir(parents=True, exist_ok=True)
-with config_path.open("w", encoding="utf-8") as fh:
-    yaml.safe_dump(config, fh, sort_keys=False)
+
+try:
+    import yaml
+except ImportError:
+    yaml = None
+
+if yaml is None:
+    if config_path.exists() and config_path.read_text(encoding="utf-8").strip():
+        raise SystemExit("PyYAML is unavailable and Hermes config already exists; cannot merge MCP config safely")
+
+    config_path.write_text(
+        f"""mcp_servers:
+  {server_name}:
+    url: {server_url}
+    headers:
+      Authorization: Bearer ${{TP_KNOWLEDGE_MCP_TOKEN}}
+    enabled: true
+    connect_timeout: 60
+    timeout: 300
+    tools:
+      include:
+      - knowledge_answer_context
+      resources: false
+      prompts: false
+""",
+        encoding="utf-8",
+    )
+else:
+    if config_path.exists():
+        with config_path.open("r", encoding="utf-8") as fh:
+            config = yaml.safe_load(fh) or {}
+    else:
+        config = {}
+
+    if not isinstance(config, dict):
+        raise SystemExit("Hermes config root must be a mapping")
+
+    mcp_servers = config.setdefault("mcp_servers", {})
+    if not isinstance(mcp_servers, dict):
+        raise SystemExit("Hermes config mcp_servers must be a mapping")
+
+    mcp_servers[server_name] = {
+        "url": server_url,
+        "headers": {
+            "Authorization": "Bearer ${TP_KNOWLEDGE_MCP_TOKEN}",
+        },
+        "enabled": True,
+        "connect_timeout": 60,
+        "timeout": 300,
+        "tools": {
+            "include": ["knowledge_answer_context"],
+            "resources": False,
+            "prompts": False,
+        },
+    }
+
+    with config_path.open("w", encoding="utf-8") as fh:
+        yaml.safe_dump(config, fh, sort_keys=False)
 PY
 
     if command -v hermes >/dev/null 2>&1; then
