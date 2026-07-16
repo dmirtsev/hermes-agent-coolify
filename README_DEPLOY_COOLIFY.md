@@ -99,11 +99,13 @@ Optional overrides:
 
 ```env
 HERMES_EDGE_BASIC_AUTH_LISTEN_PORT=9119
-HERMES_EDGE_BASIC_AUTH_UPSTREAM_PORT=19119
+HERMES_EDGE_BASIC_AUTH_UPSTREAM_PORT=8642
 ```
 
-When enabled, `entrypoint.sh` starts Hermes on `127.0.0.1:${HERMES_EDGE_BASIC_AUTH_UPSTREAM_PORT}`
-and exposes the Basic Auth proxy on `${HERMES_EDGE_BASIC_AUTH_LISTEN_PORT}`.
+When enabled, `entrypoint.sh` starts Hermes normally and exposes the Basic Auth
+proxy on `${HERMES_EDGE_BASIC_AUTH_LISTEN_PORT}`. The proxy forwards to
+`${API_SERVER_PORT}` by default, which is the Hermes OpenAI-compatible API
+server.
 Do not reuse production credentials.
 
 ## Source routing policy
