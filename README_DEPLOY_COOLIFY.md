@@ -85,6 +85,17 @@ to Git. The entrypoint does not print the token.
 Prefer Coolify or Traefik Basic Auth on the test domain so every route is
 protected before traffic reaches Hermes.
 
+Recommended test setup:
+
+```env
+HERMES_DASHBOARD=0
+API_SERVER_ENABLED=true
+API_SERVER_HOST=0.0.0.0
+API_SERVER_PORT=9119
+API_SERVER_KEY=<test API key>
+HERMES_EDGE_BASIC_AUTH_ENABLED=false
+```
+
 If proxy-level protection is not available, this wrapper can protect the whole
 Hermes HTTP surface, including `/v1/*`, with an in-container Basic Auth proxy.
 Set these only on the test Hermes application:
