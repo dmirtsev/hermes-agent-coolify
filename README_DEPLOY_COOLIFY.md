@@ -96,28 +96,9 @@ API_SERVER_KEY=<test API key>
 HERMES_EDGE_BASIC_AUTH_ENABLED=false
 ```
 
-If proxy-level protection is not available, this wrapper can protect the whole
-Hermes HTTP surface, including `/v1/*`, with an in-container Basic Auth proxy.
-Set these only on the test Hermes application:
-
-```env
-HERMES_EDGE_BASIC_AUTH_ENABLED=true
-HERMES_EDGE_BASIC_AUTH_USERNAME=<test username>
-HERMES_EDGE_BASIC_AUTH_PASSWORD=<test password>
-```
-
-Optional overrides:
-
-```env
-HERMES_EDGE_BASIC_AUTH_LISTEN_PORT=9119
-HERMES_EDGE_BASIC_AUTH_UPSTREAM_PORT=8642
-```
-
-When enabled, `entrypoint.sh` starts Hermes normally and exposes the Basic Auth
-proxy on `${HERMES_EDGE_BASIC_AUTH_LISTEN_PORT}`. The proxy forwards to
-`${API_SERVER_PORT}` by default, which is the Hermes OpenAI-compatible API
-server.
-Do not reuse production credentials.
+This wrapper does not run an in-container Basic Auth proxy. Keep domain
+protection in Coolify/Traefik, and keep API access protected with
+`API_SERVER_KEY`. Do not reuse production credentials.
 
 ## Source routing policy
 

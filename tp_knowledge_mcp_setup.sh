@@ -1,4 +1,4 @@
-#!/usr/bin/env sh
+#!/command/with-contenv sh
 set -eu
 
 HERMES_HOME="${HERMES_HOME:-/opt/data}"
@@ -13,40 +13,8 @@ export TP_KNOWLEDGE_MCP_NAME
 export TP_KNOWLEDGE_MCP_URL
 export TP_KNOWLEDGE_MCP_CONFIG_PATH
 
-HERMES_EDGE_BASIC_AUTH_ENABLED="${HERMES_EDGE_BASIC_AUTH_ENABLED:-false}"
-HERMES_EDGE_BASIC_AUTH_LISTEN_HOST="${HERMES_EDGE_BASIC_AUTH_LISTEN_HOST:-0.0.0.0}"
-HERMES_EDGE_BASIC_AUTH_LISTEN_PORT="${HERMES_EDGE_BASIC_AUTH_LISTEN_PORT:-9119}"
-HERMES_EDGE_BASIC_AUTH_UPSTREAM_HOST="${HERMES_EDGE_BASIC_AUTH_UPSTREAM_HOST:-127.0.0.1}"
-HERMES_EDGE_BASIC_AUTH_UPSTREAM_PORT="${HERMES_EDGE_BASIC_AUTH_UPSTREAM_PORT:-${API_SERVER_PORT:-8642}}"
-if [ "${HERMES_EDGE_BASIC_AUTH_ENABLED}" = "true" ] || [ "${HERMES_EDGE_BASIC_AUTH_ENABLED}" = "TRUE" ] || [ "${HERMES_EDGE_BASIC_AUTH_ENABLED}" = "1" ]; then
-  echo "[hermes-entrypoint] HERMES_EDGE_BASIC_AUTH_ENABLED is deprecated; use Coolify/Traefik domain protection instead"
-fi
-HERMES_EDGE_BASIC_AUTH_ENABLED=false
-export HERMES_EDGE_BASIC_AUTH_ENABLED
-export HERMES_EDGE_BASIC_AUTH_LISTEN_HOST
-export HERMES_EDGE_BASIC_AUTH_LISTEN_PORT
-export HERMES_EDGE_BASIC_AUTH_UPSTREAM_HOST
-export HERMES_EDGE_BASIC_AUTH_UPSTREAM_PORT
-
-if [ "${API_SERVER_ENABLED:-}" = "true" ] || [ "${API_SERVER_ENABLED:-}" = "TRUE" ] || [ "${API_SERVER_ENABLED:-}" = "1" ]; then
-  API_SERVER_PORT=9119
-  export API_SERVER_PORT
-fi
-
-if [ "${1:-}" = "gateway" ]; then
-  shift
-  set -- hermes gateway "$@"
-fi
-
-if [ "${1:-}" = "hermes" ] && [ "${2:-}" = "gateway" ] && [ "${3:-}" = "run" ]; then
-  case " $* " in
-    *" --no-supervise "*)
-      ;;
-    *)
-      set -- "$@" --no-supervise
-      ;;
-  esac
-fi
+PATH="/opt/hermes/bin:/opt/hermes/.venv/bin:${PATH:-/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin}"
+export PATH
 
 case "${TP_KNOWLEDGE_MCP_ENABLED}" in
   true|TRUE|1|yes|YES|on|ON)
@@ -154,46 +122,5 @@ PY
     ;;
   *)
     echo "[hermes-entrypoint] TP Knowledge MCP registration disabled"
-    ;;
-esac
-
-case "${HERMES_EDGE_BASIC_AUTH_ENABLED}" in
-  true|TRUE|1|yes|YES|on|ON)
-    if [ -z "${HERMES_EDGE_BASIC_AUTH_USERNAME:-}" ]; then
-      echo "[hermes-entrypoint] HERMES_EDGE_BASIC_AUTH_USERNAME is required when HERMES_EDGE_BASIC_AUTH_ENABLED=true" >&2
-      exit 1
-    fi
-
-    if [ -z "${HERMES_EDGE_BASIC_AUTH_PASSWORD:-}" ]; then
-      echo "[hermes-entrypoint] HERMES_EDGE_BASIC_AUTH_PASSWORD is required when HERMES_EDGE_BASIC_AUTH_ENABLED=true" >&2
-      exit 1
-    fi
-
-    if [ ! -f /hermes_basic_auth_proxy.py ]; then
-      echo "[hermes-entrypoint] /hermes_basic_auth_proxy.py is missing" >&2
-      exit 1
-    fi
-
-    echo "[hermes-entrypoint] starting Hermes behind edge Basic Auth proxy on ${HERMES_EDGE_BASIC_AUTH_LISTEN_HOST}:${HERMES_EDGE_BASIC_AUTH_LISTEN_PORT}"
-    "$@" &
-    HERMES_PID="$!"
-
-    shutdown() {
-      kill "${HERMES_PID}" >/dev/null 2>&1 || true
-      wait "${HERMES_PID}" >/dev/null 2>&1 || true
-    }
-    trap shutdown INT TERM EXIT
-
-    if command -v python3 >/dev/null 2>&1; then
-      python3 /hermes_basic_auth_proxy.py
-    elif command -v python >/dev/null 2>&1; then
-      python /hermes_basic_auth_proxy.py
-    else
-      echo "[hermes-entrypoint] python is required to run edge Basic Auth proxy" >&2
-      exit 1
-    fi
-    ;;
-  *)
-    exec "$@"
     ;;
 esac

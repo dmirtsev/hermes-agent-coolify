@@ -2,9 +2,8 @@ FROM nousresearch/hermes-agent@sha256:3326d81d12518be9b3ada3546b4abf97c2ac663e72
 
 ENV HERMES_HOME=/opt/data
 
-COPY entrypoint.sh /entrypoint.sh
-COPY hermes_basic_auth_proxy.py /hermes_basic_auth_proxy.py
-RUN chmod +x /entrypoint.sh
+COPY tp_knowledge_mcp_setup.sh /etc/cont-init.d/90-tp-knowledge-mcp
+RUN chmod +x /etc/cont-init.d/90-tp-knowledge-mcp
 
-ENTRYPOINT ["/entrypoint.sh"]
-CMD ["hermes", "gateway", "run", "--no-supervise"]
+ENTRYPOINT ["/init", "/opt/hermes/docker/main-wrapper.sh"]
+CMD ["gateway", "run"]
