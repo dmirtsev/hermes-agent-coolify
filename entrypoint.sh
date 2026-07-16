@@ -29,6 +29,23 @@ if [ "${1:-}" = "gateway" ]; then
   set -- hermes gateway "$@"
 fi
 
+if [ "${1:-}" = "hermes" ] && [ "${2:-}" = "gateway" ] && [ "${3:-}" = "run" ]; then
+  case " $* " in
+    *" --no-supervise "*)
+      ;;
+    *)
+      set -- "$@" --no-supervise
+      ;;
+  esac
+  case " $* " in
+    *" --external-supervisor "*)
+      ;;
+    *)
+      set -- "$@" --external-supervisor
+      ;;
+  esac
+fi
+
 case "${TP_KNOWLEDGE_MCP_ENABLED}" in
   true|TRUE|1|yes|YES|on|ON)
     if [ -z "${TP_KNOWLEDGE_MCP_URL}" ]; then
