@@ -24,6 +24,11 @@ export HERMES_EDGE_BASIC_AUTH_LISTEN_PORT
 export HERMES_EDGE_BASIC_AUTH_UPSTREAM_HOST
 export HERMES_EDGE_BASIC_AUTH_UPSTREAM_PORT
 
+if [ "${1:-}" = "gateway" ]; then
+  shift
+  set -- hermes gateway "$@"
+fi
+
 case "${TP_KNOWLEDGE_MCP_ENABLED}" in
   true|TRUE|1|yes|YES|on|ON)
     if [ -z "${TP_KNOWLEDGE_MCP_URL}" ]; then
