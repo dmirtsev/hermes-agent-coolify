@@ -4,10 +4,8 @@ This repository is a tiny Coolify wrapper around the official Hermes Agent Docke
 
 It does not copy Hermes source code.
 
-```dockerfile
-FROM nousresearch/hermes-agent:latest
-CMD ["gateway", "run"]
-```
+The wrapper starts Hermes through `entrypoint.sh`, then executes `gateway run`.
+The entrypoint is responsible for optional MCP registration before the gateway starts.
 
 ## Coolify
 
@@ -44,19 +42,43 @@ HERMES_DASHBOARD_BASIC_AUTH_SECRET=CHANGE_ME_LONG_RANDOM_SECRET
 
 Optional OpenAI/OpenRouter keys can be added later through Hermes setup/dashboard or environment configuration.
 
-## GBrain MCP test config
+## Test TP Knowledge MCP config
 
-After Hermes starts, connect GBrain as a remote HTTP MCP server in `/opt/data/config.yaml` or through Hermes MCP commands:
+Use a separate Coolify application for the test contour:
+
+```text
+Repository: dmirtsev/hermes-agent-coolify
+Branch: test
+Domain: <separate test Hermes domain>
+Ports Exposes: 9119
+```
+
+Set these variables in the test Coolify application. Do not commit their values:
+
+```env
+TP_KNOWLEDGE_MCP_ENABLED=true
+TP_KNOWLEDGE_MCP_URL=https://test-mcp-bridge-germes-knowledge.astrogeoagent.ru/mcp
+TP_KNOWLEDGE_MCP_TOKEN=<secret from the test MCP_BRIDGE_TOKEN>
+TP_KNOWLEDGE_MCP_NAME=tp_knowledge_test
+```
+
+At startup, `entrypoint.sh` writes this MCP server to `${HERMES_HOME}/config.yaml`
+using the supported Hermes remote MCP config shape:
 
 ```yaml
 mcp_servers:
-  gbrain:
-    url: "https://gbrain.astrogeoagent.ru/mcp"
+  tp_knowledge_test:
+    url: "https://test-mcp-bridge-germes-knowledge.astrogeoagent.ru/mcp"
     headers:
-      Authorization: "Bearer CHANGE_ME_GBRAIN_TOKEN"
+      Authorization: "Bearer ${TP_KNOWLEDGE_MCP_TOKEN}"
+    tools:
+      include: ["knowledge_answer_context"]
+      resources: false
+      prompts: false
 ```
 
-The current GBrain token used during testing must be revoked and replaced before production.
+The token remains an environment variable and is not written as a literal secret
+to Git. The entrypoint does not print the token.
 
 ## Source routing policy
 
