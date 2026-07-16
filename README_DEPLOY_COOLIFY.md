@@ -4,8 +4,8 @@ This repository is a tiny Coolify wrapper around the official Hermes Agent Docke
 
 It does not copy Hermes source code.
 
-The wrapper starts Hermes through `entrypoint.sh`, then executes `gateway run`.
-The entrypoint is responsible for optional MCP registration before the gateway starts.
+The wrapper keeps Hermes' official s6 entrypoint and installs a small
+`cont-init.d` hook that registers the test MCP server before Hermes starts.
 
 ## Coolify
 
@@ -62,7 +62,7 @@ TP_KNOWLEDGE_MCP_TOKEN=<secret from the test MCP_BRIDGE_TOKEN>
 TP_KNOWLEDGE_MCP_NAME=tp_knowledge_test
 ```
 
-At startup, `entrypoint.sh` writes this MCP server to `${HERMES_HOME}/config.yaml`
+At startup, `/etc/cont-init.d/90-tp-knowledge-mcp` writes this MCP server to `${HERMES_HOME}/config.yaml`
 using the supported Hermes remote MCP config shape:
 
 ```yaml
@@ -70,15 +70,16 @@ mcp_servers:
   tp_knowledge_test:
     url: "https://test-mcp-bridge-germes-knowledge.astrogeoagent.ru/mcp"
     headers:
-      Authorization: "Bearer ${TP_KNOWLEDGE_MCP_TOKEN}"
+      Authorization: "Bearer ${MCP_TP_KNOWLEDGE_TEST_API_KEY}"
     tools:
       include: ["knowledge_answer_context"]
       resources: false
       prompts: false
 ```
 
-The token remains an environment variable and is not written as a literal secret
-to Git. The entrypoint does not print the token.
+The token is copied from `TP_KNOWLEDGE_MCP_TOKEN` into Hermes' runtime `.env`
+as `MCP_TP_KNOWLEDGE_TEST_API_KEY`, matching Hermes CLI's supported remote MCP
+Bearer-token convention. It is not written to Git and is not printed.
 
 ## Test edge protection
 

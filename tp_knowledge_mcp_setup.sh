@@ -8,10 +8,29 @@ TP_KNOWLEDGE_MCP_ENABLED="${TP_KNOWLEDGE_MCP_ENABLED:-false}"
 TP_KNOWLEDGE_MCP_NAME="${TP_KNOWLEDGE_MCP_NAME:-tp_knowledge_test}"
 TP_KNOWLEDGE_MCP_URL="${TP_KNOWLEDGE_MCP_URL:-}"
 TP_KNOWLEDGE_MCP_CONFIG_PATH="${TP_KNOWLEDGE_MCP_CONFIG_PATH:-${HERMES_HOME}/config.yaml}"
+TP_KNOWLEDGE_MCP_ENV_PATH="${TP_KNOWLEDGE_MCP_ENV_PATH:-${HERMES_HOME}/.env}"
 export TP_KNOWLEDGE_MCP_ENABLED
 export TP_KNOWLEDGE_MCP_NAME
 export TP_KNOWLEDGE_MCP_URL
 export TP_KNOWLEDGE_MCP_CONFIG_PATH
+export TP_KNOWLEDGE_MCP_ENV_PATH
+
+API_SERVER_ENABLED="${API_SERVER_ENABLED:-true}"
+API_SERVER_HOST="${API_SERVER_HOST:-0.0.0.0}"
+API_SERVER_PORT=9119
+export API_SERVER_ENABLED
+export API_SERVER_HOST
+export API_SERVER_PORT
+
+persist_s6_env() {
+  if [ -d /run/s6/container_environment ]; then
+    printf '%s' "$2" > "/run/s6/container_environment/$1"
+  fi
+}
+
+persist_s6_env API_SERVER_ENABLED "${API_SERVER_ENABLED}"
+persist_s6_env API_SERVER_HOST "${API_SERVER_HOST}"
+persist_s6_env API_SERVER_PORT "${API_SERVER_PORT}"
 
 PATH="/opt/hermes/bin:/opt/hermes/.venv/bin:${PATH:-/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin}"
 export PATH
@@ -43,13 +62,41 @@ case "${TP_KNOWLEDGE_MCP_ENABLED}" in
 
     "${PYTHON_BIN}" - <<'PY'
 import os
+import re
 from pathlib import Path
 
 config_path = Path(os.environ["TP_KNOWLEDGE_MCP_CONFIG_PATH"])
+env_path = Path(os.environ["TP_KNOWLEDGE_MCP_ENV_PATH"])
 server_name = os.environ["TP_KNOWLEDGE_MCP_NAME"]
 server_url = os.environ["TP_KNOWLEDGE_MCP_URL"]
+token = os.environ["TP_KNOWLEDGE_MCP_TOKEN"].strip()
+
+if token.lower().startswith("bearer "):
+    token = token[7:].strip()
+
+env_key = "MCP_" + re.sub(r"[^A-Za-z0-9_]", "_", server_name.upper()).strip("_") + "_API_KEY"
 
 config_path.parent.mkdir(parents=True, exist_ok=True)
+env_path.parent.mkdir(parents=True, exist_ok=True)
+
+lines = env_path.read_text(encoding="utf-8").splitlines() if env_path.exists() else []
+prefix = env_key + "="
+updated = False
+next_lines = []
+for line in lines:
+    if line.startswith(prefix):
+        if not updated:
+            next_lines.append(prefix + token)
+            updated = True
+        continue
+    next_lines.append(line)
+if not updated:
+    next_lines.append(prefix + token)
+env_path.write_text("\n".join(next_lines) + "\n", encoding="utf-8")
+try:
+    env_path.chmod(0o600)
+except OSError:
+    pass
 
 try:
     import yaml
@@ -62,7 +109,7 @@ if yaml is None:
   {server_name}:
     url: {server_url}
     headers:
-      Authorization: Bearer ${{TP_KNOWLEDGE_MCP_TOKEN}}
+      Authorization: Bearer ${{{env_key}}}
     enabled: true
     connect_timeout: 60
     timeout: 300
@@ -100,7 +147,7 @@ else:
     mcp_servers[server_name] = {
         "url": server_url,
         "headers": {
-            "Authorization": "Bearer ${TP_KNOWLEDGE_MCP_TOKEN}",
+            "Authorization": f"Bearer ${{{env_key}}}",
         },
         "enabled": True,
         "connect_timeout": 60,
