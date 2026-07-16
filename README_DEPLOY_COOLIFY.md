@@ -80,6 +80,32 @@ mcp_servers:
 The token remains an environment variable and is not written as a literal secret
 to Git. The entrypoint does not print the token.
 
+## Test edge protection
+
+Prefer Coolify or Traefik Basic Auth on the test domain so every route is
+protected before traffic reaches Hermes.
+
+If proxy-level protection is not available, this wrapper can protect the whole
+Hermes HTTP surface, including `/v1/*`, with an in-container Basic Auth proxy.
+Set these only on the test Hermes application:
+
+```env
+HERMES_EDGE_BASIC_AUTH_ENABLED=true
+HERMES_EDGE_BASIC_AUTH_USERNAME=<test username>
+HERMES_EDGE_BASIC_AUTH_PASSWORD=<test password>
+```
+
+Optional overrides:
+
+```env
+HERMES_EDGE_BASIC_AUTH_LISTEN_PORT=9119
+HERMES_EDGE_BASIC_AUTH_UPSTREAM_PORT=19119
+```
+
+When enabled, `entrypoint.sh` starts Hermes on `127.0.0.1:${HERMES_EDGE_BASIC_AUTH_UPSTREAM_PORT}`
+and exposes the Basic Auth proxy on `${HERMES_EDGE_BASIC_AUTH_LISTEN_PORT}`.
+Do not reuse production credentials.
+
 ## Source routing policy
 
 Routing between `GBrain`, `tp_knowledge`, and `Linear` is documented in:

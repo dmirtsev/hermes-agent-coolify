@@ -3,6 +3,7 @@ FROM nousresearch/hermes-agent@sha256:3326d81d12518be9b3ada3546b4abf97c2ac663e72
 ENV HERMES_HOME=/opt/data
 
 COPY entrypoint.sh /entrypoint.sh
+COPY hermes_basic_auth_proxy.py /hermes_basic_auth_proxy.py
 RUN chmod +x /entrypoint.sh
 
 ENTRYPOINT ["/entrypoint.sh"]
