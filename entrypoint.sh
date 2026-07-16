@@ -65,11 +65,8 @@ except ImportError:
     yaml = None
 
 if yaml is None:
-    if config_path.exists() and config_path.read_text(encoding="utf-8").strip():
-        raise SystemExit("PyYAML is unavailable and Hermes config already exists; cannot merge MCP config safely")
-
-    config_path.write_text(
-        f"""mcp_servers:
+    existing = config_path.read_text(encoding="utf-8") if config_path.exists() else ""
+    block = f"""mcp_servers:
   {server_name}:
     url: {server_url}
     headers:
@@ -82,9 +79,18 @@ if yaml is None:
       - knowledge_answer_context
       resources: false
       prompts: false
-""",
-        encoding="utf-8",
-    )
+"""
+    if existing.strip():
+        if f"\n  {server_name}:" in existing or f"  {server_name}:" in existing:
+            print("PyYAML is unavailable; keeping existing MCP config for " + server_name)
+        else:
+            with config_path.open("a", encoding="utf-8") as fh:
+                if not existing.endswith("\n"):
+                    fh.write("\n")
+                fh.write("\n")
+                fh.write(block)
+    else:
+        config_path.write_text(block, encoding="utf-8")
 else:
     if config_path.exists():
         with config_path.open("r", encoding="utf-8") as fh:
