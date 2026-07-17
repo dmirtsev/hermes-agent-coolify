@@ -81,6 +81,10 @@ The token is copied from `TP_KNOWLEDGE_MCP_TOKEN` into Hermes' runtime `.env`
 as `MCP_TP_KNOWLEDGE_TEST_API_KEY`, matching Hermes CLI's supported remote MCP
 Bearer-token convention. It is not written to Git and is not printed.
 
+For the test contour, the startup hook replaces the `mcp_servers` block with
+only `tp_knowledge_test`, so stale production or third-party MCP registrations
+from the persistent volume are not loaded.
+
 ## Test edge protection
 
 Prefer Coolify or Traefik Basic Auth on the test domain so every route is

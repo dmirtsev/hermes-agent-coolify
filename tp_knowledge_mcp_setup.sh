@@ -18,9 +18,11 @@ export TP_KNOWLEDGE_MCP_ENV_PATH
 API_SERVER_ENABLED="${API_SERVER_ENABLED:-true}"
 API_SERVER_HOST="${API_SERVER_HOST:-0.0.0.0}"
 API_SERVER_PORT=9119
+HERMES_DASHBOARD=0
 export API_SERVER_ENABLED
 export API_SERVER_HOST
 export API_SERVER_PORT
+export HERMES_DASHBOARD
 
 persist_s6_env() {
   if [ -d /run/s6/container_environment ]; then
@@ -31,6 +33,7 @@ persist_s6_env() {
 persist_s6_env API_SERVER_ENABLED "${API_SERVER_ENABLED}"
 persist_s6_env API_SERVER_HOST "${API_SERVER_HOST}"
 persist_s6_env API_SERVER_PORT "${API_SERVER_PORT}"
+persist_s6_env HERMES_DASHBOARD "${HERMES_DASHBOARD}"
 
 PATH="/opt/hermes/bin:/opt/hermes/.venv/bin:${PATH:-/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin}"
 export PATH
@@ -104,7 +107,6 @@ except ImportError:
     yaml = None
 
 if yaml is None:
-    existing = config_path.read_text(encoding="utf-8") if config_path.exists() else ""
     block = f"""mcp_servers:
   {server_name}:
     url: {server_url}
@@ -119,17 +121,7 @@ if yaml is None:
       resources: false
       prompts: false
 """
-    if existing.strip():
-        if f"\n  {server_name}:" in existing or f"  {server_name}:" in existing:
-            print("PyYAML is unavailable; keeping existing MCP config for " + server_name)
-        else:
-            with config_path.open("a", encoding="utf-8") as fh:
-                if not existing.endswith("\n"):
-                    fh.write("\n")
-                fh.write("\n")
-                fh.write(block)
-    else:
-        config_path.write_text(block, encoding="utf-8")
+    config_path.write_text(block, encoding="utf-8")
 else:
     if config_path.exists():
         with config_path.open("r", encoding="utf-8") as fh:
@@ -144,6 +136,7 @@ else:
     if not isinstance(mcp_servers, dict):
         raise SystemExit("Hermes config mcp_servers must be a mapping")
 
+    mcp_servers.clear()
     mcp_servers[server_name] = {
         "url": server_url,
         "headers": {
