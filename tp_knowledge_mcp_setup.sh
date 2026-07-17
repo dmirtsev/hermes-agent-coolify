@@ -153,6 +153,12 @@ if yaml is None:
       - knowledge_answer_context
       resources: false
       prompts: false
+platforms:
+  api_server:
+    enabled: true
+    extra:
+      host: 0.0.0.0
+      port: 9119
 """
     config_path.write_text(block, encoding="utf-8")
 else:
@@ -184,6 +190,21 @@ else:
             "prompts": False,
         },
     }
+
+    platforms = config.setdefault("platforms", {})
+    if not isinstance(platforms, dict):
+        raise SystemExit("Hermes config platforms must be a mapping")
+    api_server = platforms.setdefault("api_server", {})
+    if not isinstance(api_server, dict):
+        api_server = {}
+        platforms["api_server"] = api_server
+    api_server["enabled"] = True
+    extra = api_server.setdefault("extra", {})
+    if not isinstance(extra, dict):
+        extra = {}
+        api_server["extra"] = extra
+    extra["host"] = "0.0.0.0"
+    extra["port"] = 9119
 
     with config_path.open("w", encoding="utf-8") as fh:
         yaml.safe_dump(config, fh, sort_keys=False)
