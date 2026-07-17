@@ -14,4 +14,4 @@ RUN chmod +x /opt/hermes/tp_knowledge_mcp_setup.sh && \
     chmod +x /etc/cont-init.d/01-hermes-setup
 
 ENTRYPOINT ["/init", "/opt/hermes/docker/main-wrapper.sh"]
-CMD ["gateway", "run"]
+CMD ["gateway", "run", "--no-supervise"]
