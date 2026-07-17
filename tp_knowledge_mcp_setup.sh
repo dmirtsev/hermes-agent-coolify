@@ -65,6 +65,7 @@ case "${TP_KNOWLEDGE_MCP_ENABLED}" in
 
     "${PYTHON_BIN}" - <<'PY'
 import os
+import pwd
 import re
 from pathlib import Path
 
@@ -82,6 +83,10 @@ env_key = "MCP_" + re.sub(r"[^A-Za-z0-9_]", "_", server_name.upper()).strip("_")
 config_path.parent.mkdir(parents=True, exist_ok=True)
 env_path.parent.mkdir(parents=True, exist_ok=True)
 
+s6_env_dir = Path("/run/s6/container_environment")
+if s6_env_dir.is_dir():
+    (s6_env_dir / env_key).write_text(token, encoding="utf-8")
+
 lines = env_path.read_text(encoding="utf-8").splitlines() if env_path.exists() else []
 prefix = env_key + "="
 updated = False
@@ -96,9 +101,11 @@ for line in lines:
 if not updated:
     next_lines.append(prefix + token)
 env_path.write_text("\n".join(next_lines) + "\n", encoding="utf-8")
+env_path.chmod(0o640)
 try:
-    env_path.chmod(0o600)
-except OSError:
+    hermes_user = pwd.getpwnam("hermes")
+    os.chown(env_path, hermes_user.pw_uid, hermes_user.pw_gid)
+except (KeyError, PermissionError, OSError):
     pass
 
 try:
