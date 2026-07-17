@@ -146,6 +146,60 @@ Infrastructure checks that do not require LLM tokens:
 - Hermes sees `knowledge_answer_context`;
 - direct MCP call to `knowledge_answer_context` returns context from `luna`.
 
+## Backlog: token usage tuning
+
+The first end-to-end test with `knowledge_answer_context` worked, but token
+usage was high. Keep this as a tuning topic before using the contour for
+regular traffic.
+
+Observed during the test:
+
+```text
+Minimal ping through Hermes, without MCP:
+prompt_tokens: ~17.9k
+
+Knowledge question through Hermes and MCP:
+prompt_tokens: ~54.6k
+completion_tokens: ~0.5k
+```
+
+Likely contributors:
+
+- Hermes has a large base agent context even for a minimal request. This likely
+  includes system instructions, tool schemas, runtime instructions, skills, and
+  platform/tool metadata from the Hermes image.
+- Tool use normally requires two LLM passes: one pass to decide to call the MCP
+  tool, then another pass to answer from the tool result.
+- `knowledge_answer_context` returns a verbose JSON payload. Hermes needs the
+  final context and compact source references, but the current payload also
+  includes full chunk objects and metadata.
+
+Where to investigate:
+
+- Hermes runtime config in `/opt/data/config.yaml`: check whether the runtime
+  supports reducing active skills, tools, platforms, system/SOUL prompt content,
+  or forcing smaller tool-call arguments.
+- This wrapper's `tp_knowledge_mcp_setup.sh`: if Hermes supports a prompt or
+  policy field, inject test-only instructions to call `knowledge_answer_context`
+  with smaller defaults such as `top_k=3`, `limit=3`, `max_chars=2000`.
+- MCP Bridge / TP Knowledge implementation: add a compact response mode or
+  reduce the default output for `knowledge_answer_context` so Hermes receives
+  `context_text` plus short source references, not full chunk metadata.
+- Upstream caller architecture: for a dedicated Knowledge QA endpoint, consider
+  a single-pass flow where the caller invokes MCP first and then sends compact
+  context to the LLM, instead of using the generic Hermes agent loop.
+
+Questions to return to:
+
+- Which Hermes config fields control the base system context and active bundled
+  skills?
+- Can test/prod Hermes run in a thin Knowledge-only mode?
+- Should `knowledge_answer_context` expose a separate compact tool for LLM
+  agents?
+- What token budget should be enforced per Knowledge request?
+- Should the bridge hard-cap `top_k`, `limit`, and `max_chars` regardless of
+  model-selected arguments?
+
 ## Source routing policy
 
 Routing between `GBrain`, `tp_knowledge`, and `Linear` is documented in:
