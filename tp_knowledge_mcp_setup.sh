@@ -19,6 +19,10 @@ API_SERVER_ENABLED="${API_SERVER_ENABLED:-true}"
 API_SERVER_HOST="${API_SERVER_HOST:-0.0.0.0}"
 API_SERVER_PORT=9119
 HERMES_DASHBOARD=0
+if [ -z "${API_SERVER_KEY:-}" ]; then
+  echo "[hermes-entrypoint] API_SERVER_KEY is required for test Hermes API server" >&2
+  exit 1
+fi
 export API_SERVER_ENABLED
 export API_SERVER_HOST
 export API_SERVER_PORT
@@ -40,6 +44,7 @@ rm -f /run/s6/container_environment/HERMES_DASHBOARD \
 persist_s6_env API_SERVER_ENABLED "${API_SERVER_ENABLED}"
 persist_s6_env API_SERVER_HOST "${API_SERVER_HOST}"
 persist_s6_env API_SERVER_PORT "${API_SERVER_PORT}"
+persist_s6_env API_SERVER_KEY "${API_SERVER_KEY}"
 persist_s6_env HERMES_DASHBOARD "${HERMES_DASHBOARD}"
 
 PATH="/opt/hermes/bin:/opt/hermes/.venv/bin:${PATH:-/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin}"
@@ -205,6 +210,15 @@ else:
         api_server["extra"] = extra
     extra["host"] = "0.0.0.0"
     extra["port"] = 9119
+    extra["key"] = os.environ.get("API_SERVER_KEY", "")
+
+    print(
+        "[hermes-entrypoint] API server config: "
+        f"enabled={api_server.get('enabled')!r} "
+        f"host={extra.get('host')!r} "
+        f"port={extra.get('port')!r} "
+        f"key_present={bool(extra.get('key'))}"
+    )
 
     with config_path.open("w", encoding="utf-8") as fh:
         yaml.safe_dump(config, fh, sort_keys=False)
