@@ -47,6 +47,26 @@ persist_s6_env API_SERVER_PORT "${API_SERVER_PORT}"
 persist_s6_env API_SERVER_KEY "${API_SERVER_KEY}"
 persist_s6_env HERMES_DASHBOARD "${HERMES_DASHBOARD}"
 
+(
+  sleep 20
+  python3 - <<'PY' || true
+import socket
+
+for port in (9119, 8642):
+    sock = socket.socket()
+    sock.settimeout(2)
+    try:
+        sock.connect(("127.0.0.1", port))
+    except OSError:
+        state = "closed"
+    else:
+        state = "open"
+    finally:
+        sock.close()
+    print(f"[hermes-entrypoint] port probe 127.0.0.1:{port} {state}", flush=True)
+PY
+) &
+
 PATH="/opt/hermes/bin:/opt/hermes/.venv/bin:${PATH:-/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin}"
 export PATH
 
