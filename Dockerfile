@@ -4,6 +4,7 @@ ENV HERMES_HOME=/opt/data
 
 COPY tp_knowledge_mcp_setup.sh /opt/hermes/tp_knowledge_mcp_setup.sh
 RUN chmod +x /opt/hermes/tp_knowledge_mcp_setup.sh && \
+    rm -f /etc/s6-overlay/s6-rc.d/user/contents.d/dashboard && \
     printf '%s\n' \
       '#!/command/with-contenv sh' \
       'set -eu' \

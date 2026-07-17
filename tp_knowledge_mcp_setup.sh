@@ -30,6 +30,13 @@ persist_s6_env() {
   fi
 }
 
+rm -f /run/s6/container_environment/HERMES_DASHBOARD \
+  /run/s6/container_environment/HERMES_DASHBOARD_PORT \
+  /run/s6/container_environment/HERMES_DASHBOARD_HOST \
+  /run/s6/container_environment/HERMES_DASHBOARD_BASIC_AUTH_USERNAME \
+  /run/s6/container_environment/HERMES_DASHBOARD_BASIC_AUTH_PASSWORD \
+  /run/s6/container_environment/HERMES_DASHBOARD_BASIC_AUTH_SECRET 2>/dev/null || true
+
 persist_s6_env API_SERVER_ENABLED "${API_SERVER_ENABLED}"
 persist_s6_env API_SERVER_HOST "${API_SERVER_HOST}"
 persist_s6_env API_SERVER_PORT "${API_SERVER_PORT}"
@@ -86,6 +93,25 @@ env_path.parent.mkdir(parents=True, exist_ok=True)
 s6_env_dir = Path("/run/s6/container_environment")
 if s6_env_dir.is_dir():
     (s6_env_dir / env_key).write_text(token, encoding="utf-8")
+
+try:
+    from urllib.error import HTTPError, URLError
+    from urllib.request import Request, urlopen
+
+    request = Request(
+        server_url,
+        method="GET",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    try:
+        with urlopen(request, timeout=20) as response:
+            print(f"[hermes-entrypoint] MCP auth probe returned HTTP {response.status}")
+    except HTTPError as exc:
+        print(f"[hermes-entrypoint] MCP auth probe returned HTTP {exc.code}")
+    except URLError as exc:
+        print(f"[hermes-entrypoint] MCP auth probe failed: {exc.reason}")
+except Exception as exc:
+    print(f"[hermes-entrypoint] MCP auth probe skipped: {exc.__class__.__name__}")
 
 lines = env_path.read_text(encoding="utf-8").splitlines() if env_path.exists() else []
 prefix = env_key + "="
