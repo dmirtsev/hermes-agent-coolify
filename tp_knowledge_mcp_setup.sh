@@ -19,7 +19,7 @@ export TP_KNOWLEDGE_MCP_ENV_PATH
 
 API_SERVER_ENABLED="${API_SERVER_ENABLED:-true}"
 API_SERVER_HOST="${API_SERVER_HOST:-0.0.0.0}"
-API_SERVER_PORT=9119
+API_SERVER_PORT="${API_SERVER_PORT:-9119}"
 HERMES_DASHBOARD=0
 if [ -z "${API_SERVER_KEY:-}" ]; then
   echo "[hermes-entrypoint] API_SERVER_KEY is required for Hermes API server" >&2
@@ -191,7 +191,7 @@ platforms:
     enabled: true
     extra:
       host: 0.0.0.0
-      port: 9119
+      port: {int(os.environ["API_SERVER_PORT"])}
 """
     config_path.write_text(block, encoding="utf-8")
 else:
@@ -238,7 +238,7 @@ else:
         extra = {}
         api_server["extra"] = extra
     extra["host"] = "0.0.0.0"
-    extra["port"] = 9119
+    extra["port"] = int(os.environ["API_SERVER_PORT"])
     extra["key"] = os.environ.get("API_SERVER_KEY", "")
 
     print(

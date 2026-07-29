@@ -98,11 +98,14 @@ TP_KNOWLEDGE_MCP_URL=https://mcp-bridge-germes-knowledge.astrogeoagent.ru/mcp
 TP_KNOWLEDGE_MCP_TOKEN=<secret from the production MCP_BRIDGE_TOKEN>
 TP_KNOWLEDGE_MCP_NAME=tp_knowledge
 TP_KNOWLEDGE_MCP_REPLACE_ALL=false
+API_SERVER_PORT=8642
 ```
 
 The production-safe default is `TP_KNOWLEDGE_MCP_REPLACE_ALL=false`. Existing
 MCP registrations in the persistent Hermes config are preserved and the
-`tp_knowledge` entry is added or updated in place.
+`tp_knowledge` entry is added or updated in place. `API_SERVER_PORT` must match
+the port exposed by the production Coolify application; the wrapper preserves
+the environment-specific value instead of forcing the test port.
 
 ## Test edge protection
 
