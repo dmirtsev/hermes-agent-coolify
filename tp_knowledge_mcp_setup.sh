@@ -5,13 +5,15 @@ HERMES_HOME="${HERMES_HOME:-/opt/data}"
 export HERMES_HOME
 
 TP_KNOWLEDGE_MCP_ENABLED="${TP_KNOWLEDGE_MCP_ENABLED:-false}"
-TP_KNOWLEDGE_MCP_NAME="${TP_KNOWLEDGE_MCP_NAME:-tp_knowledge_test}"
+TP_KNOWLEDGE_MCP_NAME="${TP_KNOWLEDGE_MCP_NAME:-tp_knowledge}"
 TP_KNOWLEDGE_MCP_URL="${TP_KNOWLEDGE_MCP_URL:-}"
+TP_KNOWLEDGE_MCP_REPLACE_ALL="${TP_KNOWLEDGE_MCP_REPLACE_ALL:-false}"
 TP_KNOWLEDGE_MCP_CONFIG_PATH="${TP_KNOWLEDGE_MCP_CONFIG_PATH:-${HERMES_HOME}/config.yaml}"
 TP_KNOWLEDGE_MCP_ENV_PATH="${TP_KNOWLEDGE_MCP_ENV_PATH:-${HERMES_HOME}/.env}"
 export TP_KNOWLEDGE_MCP_ENABLED
 export TP_KNOWLEDGE_MCP_NAME
 export TP_KNOWLEDGE_MCP_URL
+export TP_KNOWLEDGE_MCP_REPLACE_ALL
 export TP_KNOWLEDGE_MCP_CONFIG_PATH
 export TP_KNOWLEDGE_MCP_ENV_PATH
 
@@ -20,7 +22,7 @@ API_SERVER_HOST="${API_SERVER_HOST:-0.0.0.0}"
 API_SERVER_PORT=9119
 HERMES_DASHBOARD=0
 if [ -z "${API_SERVER_KEY:-}" ]; then
-  echo "[hermes-entrypoint] API_SERVER_KEY is required for test Hermes API server" >&2
+  echo "[hermes-entrypoint] API_SERVER_KEY is required for Hermes API server" >&2
   exit 1
 fi
 export API_SERVER_ENABLED
@@ -105,6 +107,12 @@ config_path = Path(os.environ["TP_KNOWLEDGE_MCP_CONFIG_PATH"])
 env_path = Path(os.environ["TP_KNOWLEDGE_MCP_ENV_PATH"])
 server_name = os.environ["TP_KNOWLEDGE_MCP_NAME"]
 server_url = os.environ["TP_KNOWLEDGE_MCP_URL"]
+replace_all = os.environ["TP_KNOWLEDGE_MCP_REPLACE_ALL"].lower() in {
+    "true",
+    "1",
+    "yes",
+    "on",
+}
 token = os.environ["TP_KNOWLEDGE_MCP_TOKEN"].strip()
 
 if token.lower().startswith("bearer "):
@@ -200,7 +208,8 @@ else:
     if not isinstance(mcp_servers, dict):
         raise SystemExit("Hermes config mcp_servers must be a mapping")
 
-    mcp_servers.clear()
+    if replace_all:
+        mcp_servers.clear()
     mcp_servers[server_name] = {
         "url": server_url,
         "headers": {

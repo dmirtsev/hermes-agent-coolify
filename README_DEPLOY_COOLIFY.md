@@ -5,7 +5,8 @@ This repository is a tiny Coolify wrapper around the official Hermes Agent Docke
 It does not copy Hermes source code.
 
 The wrapper keeps Hermes' official s6 entrypoint and installs a small
-`cont-init.d` hook that registers the test MCP server before Hermes starts.
+`cont-init.d` hook that registers the configured TP Knowledge MCP server before
+Hermes starts.
 
 ## Coolify
 
@@ -60,6 +61,7 @@ TP_KNOWLEDGE_MCP_ENABLED=true
 TP_KNOWLEDGE_MCP_URL=https://test-mcp-bridge-germes-knowledge.astrogeoagent.ru/mcp
 TP_KNOWLEDGE_MCP_TOKEN=<secret from the test MCP_BRIDGE_TOKEN>
 TP_KNOWLEDGE_MCP_NAME=tp_knowledge_test
+TP_KNOWLEDGE_MCP_REPLACE_ALL=true
 ```
 
 At startup, `/etc/cont-init.d/90-tp-knowledge-mcp` writes this MCP server to `${HERMES_HOME}/config.yaml`
@@ -81,9 +83,26 @@ The token is copied from `TP_KNOWLEDGE_MCP_TOKEN` into Hermes' runtime `.env`
 as `MCP_TP_KNOWLEDGE_TEST_API_KEY`, matching Hermes CLI's supported remote MCP
 Bearer-token convention. It is not written to Git and is not printed.
 
-For the test contour, the startup hook replaces the `mcp_servers` block with
-only `tp_knowledge_test`, so stale production or third-party MCP registrations
-from the persistent volume are not loaded.
+For an isolated test contour, `TP_KNOWLEDGE_MCP_REPLACE_ALL=true` replaces the
+`mcp_servers` block with only `tp_knowledge_test`, so stale production or
+third-party MCP registrations from the persistent volume are not loaded.
+
+## Production TP Knowledge MCP config
+
+Production must use its own Coolify environment values and must not copy test
+credentials:
+
+```env
+TP_KNOWLEDGE_MCP_ENABLED=true
+TP_KNOWLEDGE_MCP_URL=https://mcp-bridge-germes-knowledge.astrogeoagent.ru/mcp
+TP_KNOWLEDGE_MCP_TOKEN=<secret from the production MCP_BRIDGE_TOKEN>
+TP_KNOWLEDGE_MCP_NAME=tp_knowledge
+TP_KNOWLEDGE_MCP_REPLACE_ALL=false
+```
+
+The production-safe default is `TP_KNOWLEDGE_MCP_REPLACE_ALL=false`. Existing
+MCP registrations in the persistent Hermes config are preserved and the
+`tp_knowledge` entry is added or updated in place.
 
 ## Test edge protection
 
