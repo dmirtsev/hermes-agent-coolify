@@ -527,6 +527,7 @@ from agent.durable_accounting import (
     internal_authorized as durable_internal_authorized,
     reconcile_request as durable_reconcile_request,
     request_payload_sha256 as durable_payload_sha256,
+    seal_not_dispatched as durable_seal_not_dispatched,
 )
 
 logger = logging.getLogger(__name__)
@@ -583,6 +584,32 @@ replace_once(
             logger.exception("Durable accounting reconciliation failed")
             return web.json_response(
                 _openai_error("Accounting reconciliation unavailable", err_type="server_error"),
+                status=503,
+            )
+
+    async def _handle_internal_accounting_seal_not_dispatched(
+        self, request: "web.Request"
+    ) -> "web.Response":
+        auth_error = self._durable_accounting_auth_error(request)
+        if auth_error:
+            return auth_error
+        try:
+            body = await request.json()
+            payload_sha256 = body.get("payload_sha256") if isinstance(body, dict) else None
+            value = durable_seal_not_dispatched(
+                request.match_info["request_key"], payload_sha256
+            )
+            return web.json_response(value)
+        except DurableRequestKeyError:
+            return web.json_response(_openai_error("Invalid request key"), status=400)
+        except DurableRequestConflictError:
+            return web.json_response(
+                _openai_error("Idempotency payload conflict"), status=409
+            )
+        except (DurableJournalError, sqlite3.Error, OSError, ValueError, TypeError):
+            logger.exception("Durable not-dispatched seal failed")
+            return web.json_response(
+                _openai_error("Accounting journal unavailable", err_type="server_error"),
                 status=503,
             )
 
@@ -754,6 +781,10 @@ replace_once(
             self._app.router.add_post(
                 "/internal/accounting/{request_key}/reconcile",
                 self._handle_internal_accounting_reconcile,
+            )
+            self._app.router.add_post(
+                "/internal/accounting/{request_key}/seal-not-dispatched",
+                self._handle_internal_accounting_seal_not_dispatched,
             )
             self._app.router.add_post("/v1/chat/completions", self._handle_chat_completions)
 ''',
