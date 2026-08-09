@@ -1,0 +1,17 @@
+{
+  "status": "ok",
+  "platform": "hermes-agent",
+  "release": {
+    "environment": "test",
+    "wrapper_commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "routing": {
+      "strategy": "isolated_fixed_runtime",
+      "tier": "balanced",
+      "runtime_id": "hermes-test-balanced",
+      "provider": "openrouter",
+      "model": "example/balanced-model",
+      "max_tokens": 4096,
+      "fixed_model_validated": true
+    }
+  }
+}

@@ -161,16 +161,30 @@ For the test contour, set the provider only in the separate test Coolify
 application, in **Environment Variables**. Do not add these values to Git and
 do not reuse production keys.
 
-Recommended low-cost test setup:
+For the legacy single-runtime smoke setup, set the key and select the model
+with `hermes model` inside the test container:
 
 ```env
 OPENROUTER_API_KEY=<test OpenRouter key>
-HERMES_MODEL=<low-cost test model, for example a DeepSeek model>
 ```
 
-If the running Hermes version does not read `HERMES_MODEL` directly, choose the
-same low-cost model with `hermes model` inside the test container after setting
-the provider key.
+Do not treat `HERMES_MODEL` as authoritative in the pinned version. New tiered
+deployments use the explicit fixed-model contract below instead of a manual
+model picker.
+
+## Three fixed model tiers
+
+For multi-user model choice, do not use `HERMES_MODEL` and do not trust the
+OpenAI-compatible request `model` field. The safe Sprint 1 deployment contract
+is three isolated Hermes applications (`economy`, `balanced`, `strong`), each
+with a unique API token, persistent `/opt/data` volume, and fixed OpenRouter
+model.
+
+The machine-readable contract, runtime-only environment template, validation
+command, and health smoke check are in
+[`deploy/hermes-tiers/`](deploy/hermes-tiers/README.md). Model ids in the
+example manifest are placeholders until the administrator publishes an
+approved catalog selection.
 
 For the pinned Hermes image, gateway/API-server requests do **not** select the
 upstream model through the request's OpenAI-compatible `model` field. The field

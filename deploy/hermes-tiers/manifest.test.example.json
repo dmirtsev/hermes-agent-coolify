@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "environment": "test",
+  "strategy": "isolated_fixed_runtime",
+  "wrapper_commit": "__SOURCE_COMMIT__",
+  "runtimes": {
+    "economy": {
+      "runtime_id": "hermes-test-economy",
+      "endpoint_url": "https://test-hermes-economy.astrogeoagent.ru",
+      "provider": "openrouter",
+      "model_id": "change_me/economy-model",
+      "max_tokens": 4096,
+      "volume_name": "hermes-test-economy-data",
+      "api_server_key_ref": "coolify://test/hermes-economy/API_SERVER_KEY",
+      "openrouter_api_key_ref": "coolify://test/hermes-economy/OPENROUTER_API_KEY"
+    },
+    "balanced": {
+      "runtime_id": "hermes-test-balanced",
+      "endpoint_url": "https://test-hermes-balanced.astrogeoagent.ru",
+      "provider": "openrouter",
+      "model_id": "change_me/balanced-model",
+      "max_tokens": 4096,
+      "volume_name": "hermes-test-balanced-data",
+      "api_server_key_ref": "coolify://test/hermes-balanced/API_SERVER_KEY",
+      "openrouter_api_key_ref": "coolify://test/hermes-balanced/OPENROUTER_API_KEY"
+    },
+    "strong": {
+      "runtime_id": "hermes-test-strong",
+      "endpoint_url": "https://test-hermes-strong.astrogeoagent.ru",
+      "provider": "openrouter",
+      "model_id": "change_me/strong-model",
+      "max_tokens": 4096,
+      "volume_name": "hermes-test-strong-data",
+      "api_server_key_ref": "coolify://test/hermes-strong/API_SERVER_KEY",
+      "openrouter_api_key_ref": "coolify://test/hermes-strong/OPENROUTER_API_KEY"
+    }
+  }
+}

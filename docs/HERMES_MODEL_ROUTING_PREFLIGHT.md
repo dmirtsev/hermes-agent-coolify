@@ -48,6 +48,13 @@ route alias, server-side alias-to-model allowlist, actual-model reporting, and
 concurrency/integration tests. It must not repurpose the current cosmetic
 OpenAI `model` field without those controls.
 
+The enforceable deployment contract is now documented in
+`deploy/hermes-tiers/README.md`. When enabled, the wrapper atomically applies
+the fixed model fields to the runtime's own persistent config and then derives
+public health evidence by reading that YAML back. The API does not start if
+the expected provider, model, or output-token cap differs from the persisted
+configuration.
+
 ## Release evidence
 
 The wrapper now records and publishes non-secret release identity:
