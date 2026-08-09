@@ -185,8 +185,13 @@ replace_once(
                 # generation.  Dispatched exceptions are represented by an
                 # unresolved record so a later success cannot hide them.
                 if not getattr(response, "_hermes_accounting_recorded", False):
+                    # A durable write failure raises InterruptedError. Mark the
+                    # provider response as seen before writing so the interrupt
+                    # path cannot manufacture a second evidence event or retry.
+                    _accounting_response_recorded = True
                     record_openrouter_response(agent, response)
-                _accounting_response_recorded = True
+                else:
+                    _accounting_response_recorded = True
 
                 api_duration = time.time() - api_start_time
 """,
@@ -506,10 +511,253 @@ from agent.openrouter_accounting import (
     build_openrouter_accounting,
     openrouter_accounting_scope,
 )
+from agent.durable_accounting import (
+    JournalError as DurableJournalError,
+    RequestConflictError as DurableRequestConflictError,
+    RequestInFlightError as DurableRequestInFlightError,
+    RequestKeyError as DurableRequestKeyError,
+    RequestNotFoundError as DurableRequestNotFoundError,
+    RequestUnresolvedError as DurableRequestUnresolvedError,
+    begin_request as durable_begin_request,
+    complete_request as durable_complete_request,
+    durable_request_scope,
+    fail_request as durable_fail_request,
+    get_request_view as durable_get_request_view,
+    internal_auth_token as durable_internal_auth_token,
+    internal_authorized as durable_internal_authorized,
+    reconcile_request as durable_reconcile_request,
+    request_payload_sha256 as durable_payload_sha256,
+)
 
 logger = logging.getLogger(__name__)
 """,
     "API server accounting import",
+)
+
+replace_once(
+    API_SERVER,
+    '''    async def _handle_chat_completions(self, request: "web.Request") -> "web.Response":
+''',
+    '''    def _durable_accounting_auth_error(self, request: "web.Request"):
+        if durable_internal_auth_token(self._api_key) is None:
+            return web.json_response(
+                _openai_error("Accounting endpoint is not configured", err_type="server_error"),
+                status=503,
+            )
+        if not durable_internal_authorized(request.headers.get("Authorization"), self._api_key):
+            return web.json_response(_openai_error("Unauthorized"), status=401)
+        return None
+
+    async def _handle_internal_accounting_get(self, request: "web.Request") -> "web.Response":
+        auth_error = self._durable_accounting_auth_error(request)
+        if auth_error:
+            return auth_error
+        try:
+            value = durable_get_request_view(request.match_info["request_key"])
+            return web.json_response(value)
+        except DurableRequestKeyError:
+            return web.json_response(_openai_error("Invalid request key"), status=400)
+        except DurableRequestNotFoundError:
+            return web.json_response(_openai_error("Accounting request not found"), status=404)
+        except (DurableJournalError, sqlite3.Error, OSError):
+            logger.exception("Durable accounting read failed")
+            return web.json_response(
+                _openai_error("Accounting journal unavailable", err_type="server_error"),
+                status=503,
+            )
+
+    async def _handle_internal_accounting_reconcile(self, request: "web.Request") -> "web.Response":
+        auth_error = self._durable_accounting_auth_error(request)
+        if auth_error:
+            return auth_error
+        try:
+            value = await asyncio.to_thread(
+                durable_reconcile_request, request.match_info["request_key"]
+            )
+            return web.json_response(value)
+        except DurableRequestKeyError:
+            return web.json_response(_openai_error("Invalid request key"), status=400)
+        except DurableRequestNotFoundError:
+            return web.json_response(_openai_error("Accounting request not found"), status=404)
+        except (DurableJournalError, sqlite3.Error, OSError):
+            logger.exception("Durable accounting reconciliation failed")
+            return web.json_response(
+                _openai_error("Accounting reconciliation unavailable", err_type="server_error"),
+                status=503,
+            )
+
+    async def _handle_chat_completions(self, request: "web.Request") -> "web.Response":
+''',
+    "durable accounting internal handlers",
+)
+
+replace_once(
+    API_SERVER,
+    '''        # Non-streaming: run the agent (with optional Idempotency-Key)
+        async def _compute_completion():
+            return await self._run_agent(
+                user_message=user_message,
+                conversation_history=history,
+                ephemeral_system_prompt=system_prompt,
+                session_id=session_id,
+                gateway_session_key=gateway_session_key,
+            )
+
+        idempotency_key = request.headers.get("Idempotency-Key")
+        if idempotency_key:
+            fp = _make_request_fingerprint(body, keys=["model", "messages", "tools", "tool_choice", "stream"])
+            try:
+                result, usage = await _idem_cache.get_or_set(idempotency_key, fp, _compute_completion)
+            except Exception as e:
+                logger.error("Error running agent for chat completions: %s", e, exc_info=True)
+                return web.json_response(
+                    _openai_error(f"Internal server error: {e}", err_type="server_error"),
+                    status=500,
+                )
+        else:
+            try:
+                result, usage = await _compute_completion()
+            except Exception as e:
+                logger.error("Error running agent for chat completions: %s", e, exc_info=True)
+                return web.json_response(
+                    _openai_error(f"Internal server error: {e}", err_type="server_error"),
+                    status=500,
+                )
+''',
+    '''        # Non-streaming idempotent requests are journaled before dispatch.
+        # The journal, not process memory, decides whether provider execution is
+        # allowed. Streaming remains on Hermes' native path in this V1.
+        idempotency_key = request.headers.get("Idempotency-Key")
+        payload_sha256 = None
+        durable_replayed = False
+
+        async def _compute_completion():
+            return await self._run_agent(
+                user_message=user_message,
+                conversation_history=history,
+                ephemeral_system_prompt=system_prompt,
+                session_id=session_id,
+                gateway_session_key=gateway_session_key,
+                accounting_request_key=idempotency_key,
+            )
+
+        if idempotency_key:
+            payload_sha256 = durable_payload_sha256(body)
+            try:
+                decision = durable_begin_request(idempotency_key, payload_sha256)
+            except DurableRequestKeyError:
+                return web.json_response(
+                    _openai_error("Invalid Idempotency-Key", code="invalid_idempotency_key"),
+                    status=400,
+                )
+            except DurableRequestConflictError:
+                return web.json_response(
+                    _openai_error(
+                        "Idempotency-Key was already used with a different payload",
+                        code="idempotency_payload_conflict",
+                    ),
+                    status=409,
+                )
+            except DurableRequestInFlightError:
+                return web.json_response(
+                    _openai_error("Request is still in flight", code="idempotency_in_flight"),
+                    status=409,
+                )
+            except DurableRequestUnresolvedError:
+                return web.json_response(
+                    _openai_error(
+                        "Previous execution is unresolved; provider dispatch is blocked",
+                        code="idempotency_unresolved",
+                    ),
+                    status=409,
+                )
+            except (DurableJournalError, sqlite3.Error, OSError):
+                logger.exception("Durable accounting claim failed")
+                return web.json_response(
+                    _openai_error("Accounting journal unavailable", err_type="server_error"),
+                    status=503,
+                )
+
+            if decision["state"] == "completed":
+                result, usage = decision["result"], decision["usage"]
+                durable_replayed = True
+            else:
+                try:
+                    result, usage = await _compute_completion()
+                    # Store the immutable result and exact accounting before any
+                    # successful HTTP response can leave the gateway.
+                    durable_complete_request(
+                        idempotency_key, payload_sha256, result, usage
+                    )
+                except Exception:
+                    try:
+                        durable_fail_request(
+                            idempotency_key, payload_sha256, "agent_execution_failed"
+                        )
+                    except (DurableJournalError, sqlite3.Error, OSError):
+                        logger.exception("Durable accounting failure marker failed")
+                    logger.exception("Error running idempotent chat completion")
+                    return web.json_response(
+                        _openai_error("Internal server error", err_type="server_error"),
+                        status=500,
+                    )
+        else:
+            try:
+                result, usage = await _compute_completion()
+            except Exception:
+                logger.exception("Error running agent for chat completions")
+                return web.json_response(
+                    _openai_error("Internal server error", err_type="server_error"),
+                    status=500,
+                )
+''',
+    "durable non-streaming idempotency",
+)
+
+replace_once(
+    API_SERVER,
+    '''        if gateway_session_key:
+            response_headers["X-Hermes-Session-Key"] = gateway_session_key
+
+        # Hard-fail path: no usable assistant text AND a real failure → 5xx
+''',
+    '''        if gateway_session_key:
+            response_headers["X-Hermes-Session-Key"] = gateway_session_key
+        if durable_replayed:
+            response_headers["X-Hermes-Idempotency-Replayed"] = "true"
+
+        # Hard-fail path: no usable assistant text AND a real failure → 5xx
+''',
+    "durable replay response header",
+)
+
+replace_once(
+    API_SERVER,
+    '''        gateway_session_key: Optional[str] = None,
+    ) -> tuple:
+''',
+    '''        gateway_session_key: Optional[str] = None,
+        accounting_request_key: Optional[str] = None,
+    ) -> tuple:
+''',
+    "durable request key execution argument",
+)
+
+replace_once(
+    API_SERVER,
+    '''            self._app.router.add_post("/v1/chat/completions", self._handle_chat_completions)
+''',
+    '''            self._app.router.add_get(
+                "/internal/accounting/{request_key}",
+                self._handle_internal_accounting_get,
+            )
+            self._app.router.add_post(
+                "/internal/accounting/{request_key}/reconcile",
+                self._handle_internal_accounting_reconcile,
+            )
+            self._app.router.add_post("/v1/chat/completions", self._handle_chat_completions)
+''',
+    "durable accounting internal routes",
 )
 
 replace_once(
@@ -521,7 +769,7 @@ replace_once(
             )
             usage = {
 """,
-    """            with openrouter_accounting_scope(agent):
+    """            with durable_request_scope(accounting_request_key), openrouter_accounting_scope(agent):
                 result = agent.run_conversation(
                     user_message=user_message,
                     conversation_history=conversation_history,

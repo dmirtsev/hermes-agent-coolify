@@ -4,6 +4,7 @@ import asyncio
 import json
 import os
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -84,6 +85,55 @@ class PatchedHermesAccountingIntegrationTests(unittest.TestCase):
         self.assertEqual(evidence["generation_id"], "gen-transport")
         self.assertEqual(evidence["executed_model"], "executed/model")
         self.assertEqual(str(evidence["_actual_cost"]), "0.000012")
+
+    def test_internal_accounting_read_is_protected_and_omits_stored_result(self) -> None:
+        from agent.durable_accounting import (
+            begin_request,
+            complete_request,
+            request_payload_sha256,
+        )
+        from gateway.platforms.api_server import APIServerAdapter
+
+        with tempfile.TemporaryDirectory() as directory, patch.dict(
+            os.environ,
+            {
+                "HERMES_ACCOUNTING_JOURNAL_PATH": str(Path(directory) / "journal.sqlite3"),
+                "HERMES_ACCOUNTING_INTERNAL_TOKEN": "internal-test-token",
+            },
+            clear=False,
+        ):
+            digest = request_payload_sha256({"messages": ["private prompt"]})
+            begin_request("cabinet-safe-read", digest)
+            complete_request(
+                "cabinet-safe-read",
+                digest,
+                {"final_response": "private assistant response"},
+                {"total_tokens": 1},
+            )
+
+            adapter = object.__new__(APIServerAdapter)
+            adapter._api_key = "gateway-token"
+
+            class Request:
+                match_info = {"request_key": "cabinet-safe-read"}
+
+                def __init__(self, token):
+                    self.headers = {"Authorization": f"Bearer {token}"}
+
+            unauthorized = asyncio.run(
+                adapter._handle_internal_accounting_get(Request("wrong-token"))
+            )
+            self.assertEqual(unauthorized.status, 401)
+            response = asyncio.run(
+                adapter._handle_internal_accounting_get(Request("internal-test-token"))
+            )
+            self.assertEqual(response.status, 200)
+            payload = json.loads(response.text)
+            rendered = json.dumps(payload)
+            self.assertNotIn("private prompt", rendered)
+            self.assertNotIn("private assistant response", rendered)
+            self.assertNotIn("internal-test-token", rendered)
+            self.assertEqual(payload["state"], "completed")
 
     def test_hidden_stream_retry_fails_closed_after_later_success(self) -> None:
         import httpx

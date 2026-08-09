@@ -17,6 +17,10 @@ For every tier create a distinct Coolify application with:
 - one runtime-scoped `OPENROUTER_API_KEY` created under the owner's OpenRouter
   account (all keys may bill the same owner account, but key identity and
   revocation stay isolated);
+- one SQLite accounting journal at
+  `/opt/data/hermes-accounting.sqlite3` on that runtime's unique volume;
+- one `HERMES_ACCOUNTING_INTERNAL_TOKEN` shared only with the Cabinet backend
+  (or an intentional decision to reuse `API_SERVER_KEY`);
 - the runtime-only variables from `runtime.env.example`;
 - no browser-visible provider key, API key, or arbitrary endpoint/model input.
 
@@ -65,10 +69,19 @@ Multi-call tool turns are aggregated and generation IDs are deduplicated.
 
 Cabinet may finalize a wallet debit only when the machine-readable
 `usage-result.schema.json` contract says `cost.status=actual` and
-`fully_reconciled=true`. `pending` carries generation IDs for a future
-server-side OpenRouter lookup. `cost_unavailable` and catalog estimates must
-never be posted as actual spend. See
+`fully_reconciled=true`. `pending` carries generation IDs for the authenticated
+server-side OpenRouter lookup. `POST
+/internal/accounting/{idempotency-key}/reconcile` performs that lookup; `GET
+/internal/accounting/{idempotency-key}` returns the current safe journal view.
+Both require a bearer token and never return prompts, responses, or provider
+secrets. `cost_unavailable` and catalog estimates must never be posted as
+actual spend. See
 `docs/HERMES_OPENROUTER_ACCOUNTING_PREFLIGHT.md` for the complete evidence and
-failure rules. Until the durable reconciliation worker exists, a gateway
-disconnect or restart leaves the Cabinet reservation pending; absence of a
-Hermes response is never evidence that OpenRouter charged zero.
+failure rules.
+
+For billable non-streaming Chat Completions, Cabinet must send a stable unique
+`Idempotency-Key`. Hermes claims it durably before provider dispatch, stores
+the exact result/accounting before replying, and replays it after restart.
+Reusing a key with a different payload, while it is in flight, or after an
+unresolved failure returns `409` and never dispatches OpenRouter again. This
+V1 does not apply durable idempotency to streaming or the Responses API.
