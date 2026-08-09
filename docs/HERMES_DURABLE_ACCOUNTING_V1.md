@@ -22,6 +22,12 @@ The first claim is persisted before OpenRouter dispatch. Exact generation
 evidence is appended while the request runs, and the result plus accounting is
 persisted before a successful response.
 
+The durable request key is also bound to the request-owned Hermes agent and is
+passed explicitly to evidence writes. This is required because provider and
+stream workers do not inherit Python context variables. The binding restores
+prior agent state after the request and serializes accidental concurrent reuse
+of one agent, preventing evidence from one Cabinet request entering another.
+
 ## Storage and protection
 
 Configure `HERMES_ACCOUNTING_JOURNAL_PATH`; the default is

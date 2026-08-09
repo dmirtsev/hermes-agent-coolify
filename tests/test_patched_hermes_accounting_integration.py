@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import json
 import os
 import sys
 import tempfile
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -134,6 +136,83 @@ class PatchedHermesAccountingIntegrationTests(unittest.TestCase):
             self.assertNotIn("private assistant response", rendered)
             self.assertNotIn("internal-test-token", rendered)
             self.assertEqual(payload["state"], "completed")
+
+    def test_agent_bound_request_key_records_from_blank_worker_context(self) -> None:
+        from agent.durable_accounting import (
+            begin_request,
+            current_request_key,
+            get_request_view,
+            request_payload_sha256,
+        )
+        from agent.openrouter_accounting import record_openrouter_response
+        from gateway.platforms.api_server import APIServerAdapter
+
+        with tempfile.TemporaryDirectory() as directory, patch.dict(
+            os.environ,
+            {
+                "HERMES_ACCOUNTING_JOURNAL_PATH": str(Path(directory) / "journal.sqlite3"),
+            },
+            clear=False,
+        ):
+            key = "integration-cross-thread"
+            begin_request(key, request_payload_sha256({"messages": ["thread"]}))
+            agent = SimpleNamespace(
+                provider="openrouter",
+                model="configured/model",
+                base_url="https://openrouter.ai/api/v1",
+                session_prompt_tokens=3,
+                session_completion_tokens=2,
+                session_total_tokens=5,
+                session_cache_read_tokens=0,
+                session_cache_write_tokens=0,
+                session_reasoning_tokens=0,
+                session_id="integration-session",
+            )
+            response = SimpleNamespace(
+                id="gen-integration-thread",
+                model="provider/model",
+                provider="Provider",
+                usage=SimpleNamespace(
+                    prompt_tokens=3,
+                    completion_tokens=2,
+                    total_tokens=5,
+                    cost="0.00001",
+                    prompt_tokens_details=None,
+                    completion_tokens_details=None,
+                ),
+                openrouter_metadata=None,
+            )
+
+            def worker():
+                self.assertIsNone(current_request_key())
+                return record_openrouter_response(agent, response)
+
+            def run_conversation(**_kwargs):
+                with ThreadPoolExecutor(max_workers=1) as executor:
+                    self.assertTrue(executor.submit(
+                        contextvars.Context().run, worker
+                    ).result())
+                return {"final_response": "ok", "completed": True}
+
+            agent.run_conversation = run_conversation
+            adapter = object.__new__(APIServerAdapter)
+            adapter._create_agent = lambda **_kwargs: agent
+            result, usage = asyncio.run(
+                adapter._run_agent(
+                    user_message="thread",
+                    conversation_history=[],
+                    accounting_request_key=key,
+                )
+            )
+            self.assertEqual(result["final_response"], "ok")
+            self.assertEqual(
+                usage["_hermes_openrouter_accounting"]["cost"]["status"], "actual"
+            )
+            view = get_request_view(key)
+            self.assertEqual(view["evidence"]["event_count"], 1)
+            self.assertEqual(
+                view["evidence"]["generation_ids"], ["gen-integration-thread"]
+            )
 
     def test_hidden_stream_retry_fails_closed_after_later_success(self) -> None:
         import httpx

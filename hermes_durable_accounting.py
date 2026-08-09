@@ -17,6 +17,7 @@ import json
 import os
 import re
 import sqlite3
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -35,6 +36,25 @@ MAX_REQUEST_KEY_LENGTH = 160
 _CURRENT_REQUEST_KEY: contextvars.ContextVar[str | None] = contextvars.ContextVar(
     "hermes_durable_accounting_request_key", default=None
 )
+_AGENT_BINDING_ATTRIBUTE = "_hermes_durable_accounting_binding"
+_AGENT_BINDING_LOCK_ATTRIBUTE = "_hermes_durable_accounting_binding_lock"
+_AGENT_BINDING_CREATION_LOCK = threading.Lock()
+_MISSING = object()
+_AGENT_REQUEST_STATE_ATTRIBUTES = (
+    "_openrouter_accounting_generations",
+    "_openrouter_accounting_configured_provider",
+    "_openrouter_accounting_configured_model",
+)
+
+
+def _binding_request_key(binding: Any) -> str | None | object:
+    if binding is _MISSING:
+        return _MISSING
+    if binding is None:
+        return None
+    if isinstance(binding, str):
+        return normalize_request_key(binding)
+    return _MISSING
 
 
 class JournalError(RuntimeError):
@@ -205,6 +225,93 @@ def current_request_key() -> str | None:
     return _CURRENT_REQUEST_KEY.get()
 
 
+def _agent_binding_lock(agent: Any) -> threading.RLock:
+    lock = getattr(agent, _AGENT_BINDING_LOCK_ATTRIBUTE, None)
+    if lock is not None:
+        return lock
+    with _AGENT_BINDING_CREATION_LOCK:
+        lock = getattr(agent, _AGENT_BINDING_LOCK_ATTRIBUTE, None)
+        if lock is None:
+            lock = threading.RLock()
+            setattr(agent, _AGENT_BINDING_LOCK_ATTRIBUTE, lock)
+        return lock
+
+
+@contextlib.contextmanager
+def durable_agent_request_scope(agent: Any, request_key: str | None) -> Iterator[None]:
+    """Bind one durable request to an agent across nested worker threads.
+
+    Context variables intentionally remain as a same-thread compatibility
+    path. Provider workers use the immutable binding on the request-owned
+    agent. A per-agent lock serializes accidental concurrent reuse, and the
+    previous binding is restored for safe nesting/reuse.
+    """
+    normalized = normalize_request_key(request_key) if request_key is not None else None
+    lock = _agent_binding_lock(agent)
+    with lock:
+        previous = getattr(agent, _AGENT_BINDING_ATTRIBUTE, _MISSING)
+        previous_key = _binding_request_key(previous)
+        if previous_key is not _MISSING and normalized is None:
+            normalized = previous_key
+        if (
+            previous_key is not _MISSING
+            and previous_key is not None
+            and normalized is not None
+            and previous_key != normalized
+        ):
+            raise JournalError("agent_request_binding_conflict")
+        nested = (
+            previous_key is not _MISSING
+            and previous_key == normalized
+        )
+        previous_request_state = None
+        if not nested:
+            previous_request_state = {
+                attribute: getattr(agent, attribute, _MISSING)
+                for attribute in _AGENT_REQUEST_STATE_ATTRIBUTES
+            }
+            for attribute in _AGENT_REQUEST_STATE_ATTRIBUTES:
+                try:
+                    delattr(agent, attribute)
+                except AttributeError:
+                    pass
+        setattr(agent, _AGENT_BINDING_ATTRIBUTE, normalized)
+        try:
+            with durable_request_scope(normalized):
+                yield
+        finally:
+            if previous_request_state is not None:
+                for attribute, value in previous_request_state.items():
+                    if value is _MISSING:
+                        try:
+                            delattr(agent, attribute)
+                        except AttributeError:
+                            pass
+                    else:
+                        setattr(agent, attribute, value)
+            if previous is _MISSING:
+                try:
+                    delattr(agent, _AGENT_BINDING_ATTRIBUTE)
+                except AttributeError:
+                    pass
+            else:
+                setattr(agent, _AGENT_BINDING_ATTRIBUTE, previous)
+
+
+def request_key_for_agent(agent: Any) -> str | None:
+    binding = getattr(agent, _AGENT_BINDING_ATTRIBUTE, _MISSING)
+    request_key = _binding_request_key(binding)
+    if request_key is not _MISSING:
+        return request_key
+    return current_request_key()
+
+
+def _resolve_request_key(request_key: str | None) -> str | None:
+    if request_key is not None:
+        return normalize_request_key(request_key)
+    return current_request_key()
+
+
 def begin_request(request_key: str, payload_sha256: str) -> dict[str, Any]:
     request_key = normalize_request_key(request_key)
     if not isinstance(payload_sha256, str) or len(payload_sha256) != 64:
@@ -249,8 +356,10 @@ def begin_request(request_key: str, payload_sha256: str) -> dict[str, Any]:
         raise RequestInFlightError("request_in_flight")
 
 
-def record_request_accounting(accounting: Any) -> bool:
-    request_key = current_request_key()
+def record_request_accounting(
+    accounting: Any, *, request_key: str | None = None
+) -> bool:
+    request_key = _resolve_request_key(request_key)
     if request_key is None or not isinstance(accounting, dict):
         return False
     with contextlib.closing(_connect()) as connection:
@@ -337,8 +446,13 @@ def fail_request(request_key: str, payload_sha256: str, reason: str) -> None:
         )
 
 
-def record_generation_evidence(record: dict[str, Any], configured_model: str) -> bool:
-    request_key = current_request_key()
+def record_generation_evidence(
+    record: dict[str, Any],
+    configured_model: str,
+    *,
+    request_key: str | None = None,
+) -> bool:
+    request_key = _resolve_request_key(request_key)
     if request_key is None:
         return False
     generation_id = record.get("generation_id")
@@ -378,8 +492,13 @@ def record_generation_evidence(record: dict[str, Any], configured_model: str) ->
     return True
 
 
-def record_unresolved_evidence(reason: str, configured_model: str) -> bool:
-    request_key = current_request_key()
+def record_unresolved_evidence(
+    reason: str,
+    configured_model: str,
+    *,
+    request_key: str | None = None,
+) -> bool:
+    request_key = _resolve_request_key(request_key)
     if request_key is None:
         return False
     payload = {
