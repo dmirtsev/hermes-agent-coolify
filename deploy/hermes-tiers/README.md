@@ -58,9 +58,17 @@ the runtime's actual persisted `config.yaml`.
 
 ## Usage and cost contract
 
-Pinned Hermes currently exposes aggregate tokens but loses authoritative
-OpenRouter cost/generation identity. Until the dedicated accounting seam in
-`docs/HERMES_OPENROUTER_ACCOUNTING_PREFLIGHT.md` is implemented, responses
-must use the machine-readable `usage-result.schema.json` contract with
-`cost.status=cost_unavailable`. Catalog price is suitable for reservation
-estimates, not final wallet debit.
+The wrapper now retains per-generation OpenRouter identity, native token
+buckets, and `usage.cost`, then returns schema-version-2
+`hermes_accounting` on non-streaming Chat Completions and Responses API calls.
+Multi-call tool turns are aggregated and generation IDs are deduplicated.
+
+Cabinet may finalize a wallet debit only when the machine-readable
+`usage-result.schema.json` contract says `cost.status=actual` and
+`fully_reconciled=true`. `pending` carries generation IDs for a future
+server-side OpenRouter lookup. `cost_unavailable` and catalog estimates must
+never be posted as actual spend. See
+`docs/HERMES_OPENROUTER_ACCOUNTING_PREFLIGHT.md` for the complete evidence and
+failure rules. Until the durable reconciliation worker exists, a gateway
+disconnect or restart leaves the Cabinet reservation pending; absence of a
+Hermes response is never evidence that OpenRouter charged zero.

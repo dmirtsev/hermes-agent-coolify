@@ -1,6 +1,6 @@
 {
-  "schema_version": 1,
-  "request_id": "chatcmpl-example",
+  "schema_version": 2,
+  "request_id": "hermesacct_example",
   "runtime": {
     "tier": "balanced",
     "runtime_id": "hermes-test-balanced"
@@ -8,10 +8,32 @@
   "model_execution": {
     "configured_provider": "openrouter",
     "configured_model": "example/balanced-model",
-    "identity_status": "configured_only",
-    "provider_reported_models": [],
+    "identity_status": "provider_reported",
+    "executed_providers": [],
+    "provider_reported_models": ["example/balanced-model-202608"],
     "upstream_generation_ids": []
   },
+  "generations": [
+    {
+      "sequence": 1,
+      "generation_id": null,
+      "executed_provider": null,
+      "executed_model": "example/balanced-model-202608",
+      "tokens": {
+        "input": 1500,
+        "output": 240,
+        "cache_read": 0,
+        "cache_write": 0,
+        "reasoning": 0,
+        "total": 1740
+      },
+      "cost": {
+        "status": "cost_unavailable",
+        "reason": "upstream_generation_id_missing",
+        "fully_reconciled": false
+      }
+    }
+  ],
   "tokens": {
     "input": 1500,
     "output": 240,
@@ -22,6 +44,8 @@
   },
   "cost": {
     "status": "cost_unavailable",
-    "reason": "upstream_cost_not_propagated"
+    "reason": "upstream_generation_id_missing",
+    "generation_ids": [],
+    "fully_reconciled": false
   }
 }
