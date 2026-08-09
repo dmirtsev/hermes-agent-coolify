@@ -211,6 +211,18 @@ Infrastructure checks that do not require LLM tokens:
 - Hermes sees `knowledge_answer_context`;
 - direct MCP call to `knowledge_answer_context` returns context from `luna`.
 
+## OpenRouter accounting response
+
+Non-streaming `/v1/chat/completions` and `/v1/responses` responses include a
+top-level `hermes_accounting` object when the runtime is configured for
+OpenRouter. Only `cost.status=actual` together with
+`fully_reconciled=true` is final wallet evidence. `pending` returns upstream
+generation IDs for backend reconciliation; `cost_unavailable` is explicitly
+non-final. No OpenRouter secret is included in the payload.
+
+The extension, micro-USD rounding rule, and failure semantics are documented
+in [`docs/HERMES_OPENROUTER_ACCOUNTING_PREFLIGHT.md`](docs/HERMES_OPENROUTER_ACCOUNTING_PREFLIGHT.md).
+
 ## Backlog: token usage tuning
 
 The first end-to-end test with `knowledge_answer_context` worked, but token

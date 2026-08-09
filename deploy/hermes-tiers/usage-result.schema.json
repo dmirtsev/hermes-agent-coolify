@@ -1,12 +1,12 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://astrogeoagent.ru/schemas/hermes-usage-result-v1.json",
-  "title": "Hermes authoritative usage result",
+  "$id": "https://astrogeoagent.ru/schemas/hermes-usage-result-v2.json",
+  "title": "Hermes authoritative OpenRouter accounting result",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "request_id", "runtime", "model_execution", "tokens", "cost"],
+  "required": ["schema_version", "request_id", "runtime", "model_execution", "generations", "tokens", "cost"],
   "properties": {
-    "schema_version": {"const": 1},
+    "schema_version": {"const": 2},
     "request_id": {"type": "string", "minLength": 1, "maxLength": 128},
     "runtime": {
       "type": "object",
@@ -24,6 +24,7 @@
         "configured_provider",
         "configured_model",
         "identity_status",
+        "executed_providers",
         "provider_reported_models",
         "upstream_generation_ids"
       ],
@@ -31,6 +32,11 @@
         "configured_provider": {"const": "openrouter"},
         "configured_model": {"type": "string", "minLength": 3},
         "identity_status": {"enum": ["configured_only", "provider_reported"]},
+        "executed_providers": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1},
+          "uniqueItems": true
+        },
         "provider_reported_models": {
           "type": "array",
           "items": {"type": "string", "minLength": 1},
@@ -43,6 +49,14 @@
         }
       }
     },
+    "generations": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/generation"}
+    },
+    "tokens": {"$ref": "#/$defs/tokens"},
+    "cost": {"$ref": "#/$defs/aggregateCost"}
+  },
+  "$defs": {
     "tokens": {
       "type": "object",
       "additionalProperties": false,
@@ -56,35 +70,101 @@
         "total": {"type": "integer", "minimum": 0}
       }
     },
-    "cost": {
+    "generation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sequence", "generation_id", "executed_provider", "executed_model", "tokens", "cost"],
+      "properties": {
+        "sequence": {"type": "integer", "minimum": 1},
+        "generation_id": {"type": ["string", "null"], "minLength": 1},
+        "executed_provider": {"type": ["string", "null"], "minLength": 1},
+        "executed_model": {"type": ["string", "null"], "minLength": 1},
+        "tokens": {"$ref": "#/$defs/tokens"},
+        "cost": {
+          "oneOf": [
+            {"$ref": "#/$defs/generationActualCost"},
+            {"$ref": "#/$defs/generationPendingCost"},
+            {"$ref": "#/$defs/generationUnavailableCost"}
+          ]
+        }
+      }
+    },
+    "generationActualCost": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "amount_micro_usd", "amount_usd", "source", "fully_reconciled"],
+      "properties": {
+        "status": {"const": "actual"},
+        "amount_micro_usd": {"type": "integer", "minimum": 0},
+        "amount_usd": {"type": "string", "pattern": "^[0-9]+(\\.[0-9]+)?$"},
+        "source": {"const": "openrouter_usage"},
+        "fully_reconciled": {"const": true}
+      }
+    },
+    "generationPendingCost": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "reason", "fully_reconciled"],
+      "properties": {
+        "status": {"const": "pending"},
+        "reason": {"const": "generation_lookup_pending"},
+        "fully_reconciled": {"const": false}
+      }
+    },
+    "generationUnavailableCost": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "reason", "fully_reconciled"],
+      "properties": {
+        "status": {"const": "cost_unavailable"},
+        "reason": {"enum": ["upstream_generation_id_missing", "duplicate_generation_conflict"]},
+        "fully_reconciled": {"const": false}
+      }
+    },
+    "aggregateCost": {
       "oneOf": [
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["status", "amount_usd", "currency", "source", "fully_reconciled"],
+          "required": ["status", "amount_micro_usd", "amount_usd", "currency", "source", "fully_reconciled"],
           "properties": {
             "status": {"const": "actual"},
-            "amount_usd": {"type": "string", "pattern": "^[0-9]+(\\.[0-9]{1,12})?$"},
+            "amount_micro_usd": {"type": "integer", "minimum": 0},
+            "amount_usd": {"type": "string", "pattern": "^[0-9]+(\\.[0-9]+)?$"},
             "currency": {"const": "USD"},
-            "source": {"enum": ["openrouter_usage", "openrouter_generation"]},
+            "source": {"const": "openrouter_usage"},
             "fully_reconciled": {"const": true}
           }
         },
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["status", "reason"],
+          "required": ["status", "reason", "generation_ids", "fully_reconciled"],
+          "properties": {
+            "status": {"const": "pending"},
+            "reason": {"const": "generation_lookup_pending"},
+            "generation_ids": {
+              "type": "array",
+              "minItems": 1,
+              "items": {"type": "string", "minLength": 1},
+              "uniqueItems": true
+            },
+            "fully_reconciled": {"const": false}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "reason", "generation_ids", "fully_reconciled"],
           "properties": {
             "status": {"const": "cost_unavailable"},
-            "reason": {
-              "enum": [
-                "upstream_cost_not_propagated",
-                "upstream_generation_id_missing",
-                "generation_lookup_pending",
-                "generation_lookup_failed",
-                "partial_agent_run"
-              ]
-            }
+            "reason": {"enum": ["upstream_generation_id_missing", "no_billable_generations", "generation_lookup_failed", "duplicate_generation_conflict"]},
+            "generation_ids": {
+              "type": "array",
+              "items": {"type": "string", "minLength": 1},
+              "uniqueItems": true
+            },
+            "fully_reconciled": {"const": false}
           }
         }
       ]
