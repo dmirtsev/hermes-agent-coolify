@@ -49,6 +49,13 @@ persisted. Multiple generations are summed exactly before one micro-USD
 rounding. Transient and HTTP errors stay pending and can be retried; unknown
 generation IDs never become zero-cost or estimated charges.
 
+`POST /internal/accounting/{request-key}/seal-not-dispatched` accepts the
+canonical request `payload_sha256`. It atomically creates a terminal fence only
+when Hermes has no receipt for that key. A later client retry is then rejected;
+if Hermes already claimed the key, the endpoint returns its existing durable
+state and never reports `not_dispatched`. Cabinet may release a wallet reserve
+only after this authenticated terminal evidence.
+
 ## Explicit non-goals
 
 - no Cabinet wallet mutation inside Hermes;

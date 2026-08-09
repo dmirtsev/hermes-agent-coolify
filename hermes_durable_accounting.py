@@ -32,6 +32,7 @@ MICRO_USD = Decimal("1000000")
 DEFAULT_JOURNAL_PATH = "/opt/data/hermes-accounting.sqlite3"
 DEFAULT_OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 MAX_REQUEST_KEY_LENGTH = 160
+SEALED_NOT_DISPATCHED = "sealed_not_dispatched"
 
 _CURRENT_REQUEST_KEY: contextvars.ContextVar[str | None] = contextvars.ContextVar(
     "hermes_durable_accounting_request_key", default=None
@@ -446,6 +447,41 @@ def fail_request(request_key: str, payload_sha256: str, reason: str) -> None:
         )
 
 
+def seal_not_dispatched(request_key: str, payload_sha256: str) -> dict[str, Any]:
+    """Atomically fence a request key only when Hermes never received it.
+
+    The same SQLite write lock also protects ``begin_request``. Whichever
+    operation wins establishes the durable truth: either provider execution
+    may proceed, or every later HTTP retry with this key is rejected.
+    """
+
+    request_key = normalize_request_key(request_key)
+    if not isinstance(payload_sha256, str) or len(payload_sha256) != 64:
+        raise JournalError("invalid_payload_sha256")
+    now = _now()
+    with contextlib.closing(_connect()) as connection:
+        connection.execute("BEGIN IMMEDIATE")
+        row = connection.execute(
+            "SELECT payload_sha256 FROM accounting_request WHERE request_key = ?",
+            (request_key,),
+        ).fetchone()
+        if row is None:
+            connection.execute(
+                """
+                INSERT INTO accounting_request (
+                  request_key, payload_sha256, state, failure_code,
+                  created_at, updated_at
+                ) VALUES (?, ?, 'failed', ?, ?, ?)
+                """,
+                (request_key, payload_sha256, SEALED_NOT_DISPATCHED, now, now),
+            )
+        elif row["payload_sha256"] != payload_sha256:
+            connection.rollback()
+            raise RequestConflictError("idempotency_payload_conflict")
+        connection.commit()
+    return _safe_request_view(request_key)
+
+
 def record_generation_evidence(
     record: dict[str, Any],
     configured_model: str,
@@ -782,7 +818,12 @@ def _safe_request_view(request_key: str, *, include_events: bool = True) -> dict
     result: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
         "request_key": request_key,
-        "state": row["state"],
+        "state": (
+            "not_dispatched"
+            if row["state"] == "failed"
+            and row["failure_code"] == SEALED_NOT_DISPATCHED
+            else row["state"]
+        ),
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
         "completed_at": row["completed_at"],

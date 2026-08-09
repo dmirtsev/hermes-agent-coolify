@@ -83,6 +83,23 @@ class DurableAccountingTests(unittest.TestCase):
         with self.assertRaises(durable.RequestUnresolvedError):
             durable.begin_request("cabinet-3", digest)
 
+    def test_seal_not_dispatched_fences_a_late_http_retry(self):
+        digest = _payload("never-arrived")
+        view = durable.seal_not_dispatched("cabinet-never-arrived", digest)
+        self.assertEqual(view["state"], "not_dispatched")
+        repeated = durable.seal_not_dispatched("cabinet-never-arrived", digest)
+        self.assertEqual(repeated["state"], "not_dispatched")
+        with self.assertRaises(durable.RequestUnresolvedError):
+            durable.begin_request("cabinet-never-arrived", digest)
+
+    def test_seal_cannot_override_a_received_request(self):
+        digest = _payload("received")
+        durable.begin_request("cabinet-received", digest)
+        view = durable.seal_not_dispatched("cabinet-received", digest)
+        self.assertEqual(view["state"], "in_flight")
+        with self.assertRaises(durable.RequestConflictError):
+            durable.seal_not_dispatched("cabinet-received", _payload("different"))
+
     def test_evidence_survives_before_completion(self):
         digest = _payload("evidence")
         durable.begin_request("cabinet-4", digest)
