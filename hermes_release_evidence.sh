@@ -15,6 +15,8 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
+import yaml
+
 
 def clean(name: str, default: str = "unknown", max_length: int = 256) -> str:
     value = str(os.environ.get(name) or "").strip()
@@ -25,6 +27,62 @@ def clean(name: str, default: str = "unknown", max_length: int = 256) -> str:
 
 def truthy(name: str) -> bool:
     return str(os.environ.get(name) or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def fixed_model_evidence() -> dict:
+    enabled = truthy("HERMES_FIXED_MODEL_ENABLED")
+    required = truthy("HERMES_FIXED_MODEL_REQUIRED")
+    if required and not enabled:
+        raise SystemExit(
+            "[hermes-release] HERMES_FIXED_MODEL_ENABLED=true is required when "
+            "HERMES_FIXED_MODEL_REQUIRED=true"
+        )
+    if not enabled:
+        return {
+            "strategy": "legacy_global_config",
+            "fixed_model_validated": False,
+        }
+
+    tier = clean("HERMES_RUNTIME_TIER")
+    runtime_id = clean("HERMES_RUNTIME_ID")
+    expected_provider = clean("HERMES_FIXED_MODEL_PROVIDER")
+    expected_model = clean("HERMES_FIXED_MODEL_DEFAULT")
+    expected_max_tokens = clean("HERMES_FIXED_MODEL_MAX_TOKENS")
+    if tier not in {"economy", "balanced", "strong"}:
+        raise SystemExit("[hermes-release] invalid HERMES_RUNTIME_TIER")
+    if "unknown" in {runtime_id, expected_provider, expected_model, expected_max_tokens}:
+        raise SystemExit("[hermes-release] incomplete fixed model contract")
+
+    config_path = Path(
+        os.environ.get("HERMES_FIXED_MODEL_CONFIG_PATH")
+        or Path(os.environ.get("HERMES_HOME", "/opt/data")) / "config.yaml"
+    )
+    try:
+        config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+        model = config["model"]
+        actual_provider = str(model["provider"]).strip()
+        actual_model = str(model["default"]).strip()
+        actual_max_tokens = int(model["max_tokens"])
+    except Exception as exc:
+        raise SystemExit(f"[hermes-release] cannot read fixed model config: {exc}") from exc
+
+    expected = (expected_provider, expected_model, int(expected_max_tokens))
+    actual = (actual_provider, actual_model, actual_max_tokens)
+    if actual != expected:
+        raise SystemExit(
+            "[hermes-release] fixed model mismatch: "
+            f"expected provider={expected[0]} model={expected[1]} max_tokens={expected[2]}, "
+            f"actual provider={actual[0]} model={actual[1]} max_tokens={actual[2]}"
+        )
+    return {
+        "strategy": "isolated_fixed_runtime",
+        "tier": tier,
+        "runtime_id": runtime_id,
+        "provider": actual_provider,
+        "model": actual_model,
+        "max_tokens": actual_max_tokens,
+        "fixed_model_validated": True,
+    }
 
 
 path = Path(os.environ["HERMES_RELEASE_EVIDENCE_PATH"])
@@ -48,6 +106,7 @@ evidence = {
     "upstream_revision": clean("HERMES_UPSTREAM_REVISION"),
     "upstream_image_digest": clean("HERMES_UPSTREAM_IMAGE_DIGEST"),
     "runtime_started_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+    "routing": fixed_model_evidence(),
 }
 
 path.parent.mkdir(parents=True, exist_ok=True)

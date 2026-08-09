@@ -16,10 +16,12 @@ ENV HERMES_HOME=/opt/data \
     HERMES_UPSTREAM_VERSION=0.16.0
 
 COPY tp_knowledge_mcp_setup.sh /opt/hermes/tp_knowledge_mcp_setup.sh
+COPY hermes_fixed_model_setup.sh /opt/hermes/hermes_fixed_model_setup.sh
 COPY hermes_release_evidence.sh /opt/hermes/hermes_release_evidence.sh
 COPY hermes_main_wrapper.sh /opt/hermes/hermes_main_wrapper.sh
 COPY patch_hermes_health.py /opt/hermes-wrapper/patch_hermes_health.py
 RUN chmod +x /opt/hermes/tp_knowledge_mcp_setup.sh && \
+    chmod +x /opt/hermes/hermes_fixed_model_setup.sh && \
     chmod +x /opt/hermes/hermes_release_evidence.sh && \
     chmod +x /opt/hermes/hermes_main_wrapper.sh && \
     /opt/hermes/.venv/bin/python /opt/hermes-wrapper/patch_hermes_health.py && \
@@ -30,7 +32,13 @@ RUN chmod +x /opt/hermes/tp_knowledge_mcp_setup.sh && \
       '/opt/hermes/docker/stage2-hook.sh' \
       'exec /opt/hermes/tp_knowledge_mcp_setup.sh' \
       > /etc/cont-init.d/01-hermes-setup && \
-    chmod +x /etc/cont-init.d/01-hermes-setup
+    chmod +x /etc/cont-init.d/01-hermes-setup && \
+    printf '%s\n' \
+      '#!/command/with-contenv sh' \
+      'set -eu' \
+      'exec /opt/hermes/hermes_fixed_model_setup.sh' \
+      > /etc/cont-init.d/02-hermes-fixed-model && \
+    chmod +x /etc/cont-init.d/02-hermes-fixed-model
 
 ENTRYPOINT ["/init", "/opt/hermes/hermes_main_wrapper.sh"]
 CMD ["gateway", "run", "--no-supervise", "-v"]

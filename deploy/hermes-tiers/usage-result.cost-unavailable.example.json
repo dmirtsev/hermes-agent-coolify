@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "request_id": "chatcmpl-example",
+  "runtime": {
+    "tier": "balanced",
+    "runtime_id": "hermes-test-balanced"
+  },
+  "model_execution": {
+    "configured_provider": "openrouter",
+    "configured_model": "example/balanced-model",
+    "identity_status": "configured_only",
+    "provider_reported_models": [],
+    "upstream_generation_ids": []
+  },
+  "tokens": {
+    "input": 1500,
+    "output": 240,
+    "cache_read": 0,
+    "cache_write": 0,
+    "reasoning": 0,
+    "total": 1740
+  },
+  "cost": {
+    "status": "cost_unavailable",
+    "reason": "upstream_cost_not_propagated"
+  }
+}

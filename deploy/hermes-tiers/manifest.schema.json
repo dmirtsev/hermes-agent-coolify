@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://astrogeoagent.ru/schemas/hermes-tier-runtimes-v1.json",
+  "title": "Hermes isolated fixed-model runtimes",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "environment", "strategy", "wrapper_commit", "runtimes"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "environment": {"type": "string", "pattern": "^[a-z][a-z0-9_-]{1,31}$"},
+    "strategy": {"const": "isolated_fixed_runtime"},
+    "wrapper_commit": {"type": "string", "minLength": 7, "maxLength": 64},
+    "runtimes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["economy", "balanced", "strong"],
+      "properties": {
+        "economy": {"$ref": "#/$defs/runtime"},
+        "balanced": {"$ref": "#/$defs/runtime"},
+        "strong": {"$ref": "#/$defs/runtime"}
+      }
+    }
+  },
+  "$defs": {
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "runtime_id",
+        "endpoint_url",
+        "provider",
+        "model_id",
+        "max_tokens",
+        "volume_name",
+        "api_server_key_ref",
+        "openrouter_api_key_ref"
+      ],
+      "properties": {
+        "runtime_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{2,63}$"},
+        "endpoint_url": {"type": "string", "format": "uri", "pattern": "^https://"},
+        "provider": {"const": "openrouter"},
+        "model_id": {"type": "string", "pattern": "^[A-Za-z0-9._:-]+/[A-Za-z0-9._:/+-]+$"},
+        "max_tokens": {"type": "integer", "minimum": 1, "maximum": 32768},
+        "volume_name": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{2,127}$"},
+        "api_server_key_ref": {"type": "string", "pattern": "^coolify://"},
+        "openrouter_api_key_ref": {"type": "string", "pattern": "^coolify://"}
+      }
+    }
+  }
+}

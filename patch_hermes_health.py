@@ -45,6 +45,7 @@ def _wrapper_release_evidence() -> Dict[str, Any]:
                 "upstream_revision",
                 "upstream_image_digest",
                 "runtime_started_at",
+                "routing",
             }
             return {key: payload[key] for key in allowed if key in payload}
     except Exception:

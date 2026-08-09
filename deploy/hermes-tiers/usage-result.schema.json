@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://astrogeoagent.ru/schemas/hermes-usage-result-v1.json",
+  "title": "Hermes authoritative usage result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "request_id", "runtime", "model_execution", "tokens", "cost"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "request_id": {"type": "string", "minLength": 1, "maxLength": 128},
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tier", "runtime_id"],
+      "properties": {
+        "tier": {"enum": ["economy", "balanced", "strong"]},
+        "runtime_id": {"type": "string", "minLength": 3, "maxLength": 64}
+      }
+    },
+    "model_execution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "configured_provider",
+        "configured_model",
+        "identity_status",
+        "provider_reported_models",
+        "upstream_generation_ids"
+      ],
+      "properties": {
+        "configured_provider": {"const": "openrouter"},
+        "configured_model": {"type": "string", "minLength": 3},
+        "identity_status": {"enum": ["configured_only", "provider_reported"]},
+        "provider_reported_models": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1},
+          "uniqueItems": true
+        },
+        "upstream_generation_ids": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1},
+          "uniqueItems": true
+        }
+      }
+    },
+    "tokens": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["input", "output", "cache_read", "cache_write", "reasoning", "total"],
+      "properties": {
+        "input": {"type": "integer", "minimum": 0},
+        "output": {"type": "integer", "minimum": 0},
+        "cache_read": {"type": "integer", "minimum": 0},
+        "cache_write": {"type": "integer", "minimum": 0},
+        "reasoning": {"type": "integer", "minimum": 0},
+        "total": {"type": "integer", "minimum": 0}
+      }
+    },
+    "cost": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "amount_usd", "currency", "source", "fully_reconciled"],
+          "properties": {
+            "status": {"const": "actual"},
+            "amount_usd": {"type": "string", "pattern": "^[0-9]+(\\.[0-9]{1,12})?$"},
+            "currency": {"const": "USD"},
+            "source": {"enum": ["openrouter_usage", "openrouter_generation"]},
+            "fully_reconciled": {"const": true}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "reason"],
+          "properties": {
+            "status": {"const": "cost_unavailable"},
+            "reason": {
+              "enum": [
+                "upstream_cost_not_propagated",
+                "upstream_generation_id_missing",
+                "generation_lookup_pending",
+                "generation_lookup_failed",
+                "partial_agent_run"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  }
+}
