@@ -8,6 +8,11 @@ The wrapper keeps Hermes' official s6 entrypoint and installs a small
 `cont-init.d` hook that registers the configured TP Knowledge MCP server before
 Hermes starts.
 
+The wrapper also publishes non-secret release identity in `/health` and
+`/health/detailed`, writes the same payload to `${HERMES_HOME}/release.json`,
+and prints a compact release line at startup. This makes it possible to verify
+that the running container matches the Git commit intended for deployment.
+
 ## Coolify
 
 Create a new Application:
@@ -121,11 +126,29 @@ API_SERVER_HOST=0.0.0.0
 API_SERVER_PORT=9119
 API_SERVER_KEY=<test API key>
 HERMES_EDGE_BASIC_AUTH_ENABLED=false
+HERMES_WRAPPER_COMMIT=$SOURCE_COMMIT
+HERMES_DEPLOYMENT_ENVIRONMENT=test
+HERMES_RELEASE_EVIDENCE_REQUIRED=true
 ```
 
 This wrapper does not run an in-container Basic Auth proxy. Keep domain
 protection in Coolify/Traefik, and keep API access protected with
 `API_SERVER_KEY`. Do not reuse production credentials.
+
+`HERMES_WRAPPER_COMMIT`, `HERMES_DEPLOYMENT_ENVIRONMENT`, and
+`HERMES_RELEASE_EVIDENCE_REQUIRED` are runtime metadata, not secrets. Keep
+them available at runtime. Coolify expands `$SOURCE_COMMIT` to the deployed Git
+commit. As an alternative, enable **Include Source Commit in Build** so the
+Dockerfile receives the `SOURCE_COMMIT` build argument; this invalidates the
+image build cache on every commit.
+
+Verify the deployed revision without printing credentials:
+
+```bash
+curl -fsS https://test-hermes.astrogeoagent.ru/health
+```
+
+The `release.wrapper_commit` value must equal the commit merged into `test`.
 
 ## Test LLM provider
 
@@ -148,6 +171,12 @@ HERMES_MODEL=<low-cost test model, for example a DeepSeek model>
 If the running Hermes version does not read `HERMES_MODEL` directly, choose the
 same low-cost model with `hermes model` inside the test container after setting
 the provider key.
+
+For the pinned Hermes image, gateway/API-server requests do **not** select the
+upstream model through the request's OpenAI-compatible `model` field. The field
+is response metadata; agent creation continues to use `model.default` from
+`${HERMES_HOME}/config.yaml`. See
+[`docs/HERMES_MODEL_ROUTING_PREFLIGHT.md`](docs/HERMES_MODEL_ROUTING_PREFLIGHT.md).
 
 Use the LLM provider only for end-to-end validation:
 
