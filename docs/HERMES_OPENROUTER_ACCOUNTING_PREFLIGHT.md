@@ -76,17 +76,37 @@ the same accounting ID even though the compatibility API may generate a new
 response ID. Cabinet must additionally enforce uniqueness of every upstream
 generation ID; either identity repeating makes the ledger operation a no-op.
 
-## Deliberate boundary
+## Durable V1 boundary
 
-This change exposes truthful immediate evidence and reconciliation IDs. It
-does not yet durably journal in-flight generations, perform authenticated
-`/generation` lookups, or mutate the Cabinet ledger. Therefore a connection
-loss or process restart after OpenRouter accepts a request but before Hermes
-returns evidence must leave the Cabinet reservation **pending**; it must never
-be released or converted into an actual debit merely because no response was
-received. The backend reconciliation worker belongs in the next stage so its
-durable request journal, OpenRouter key, retry policy, idempotency, and wallet
-transaction can be reviewed together.
+Billable non-streaming `/v1/chat/completions` requests now require Cabinet to
+send a stable `Idempotency-Key`. Hermes stores the key, canonical payload hash,
+attempt evidence, immutable result, usage, and accounting in SQLite under its
+unique `/opt/data` volume. The claim is committed before provider dispatch and
+completion is committed before the successful HTTP response. A restart can
+therefore replay a completed result without another OpenRouter request.
+
+The same key with a different payload, an in-flight key, or a key whose prior
+execution failed unresolved returns `409`; it is never silently redispatched.
+This is deliberately fail-closed: operators must reconcile or investigate an
+unresolved attempt rather than risk a second charge.
+
+Protected internal endpoints are keyed by the Cabinet idempotency key:
+
+- `GET /internal/accounting/{request-key}` reads the safe durable view;
+- `POST /internal/accounting/{request-key}/reconcile` looks up every pending
+  known generation with OpenRouter `GET /api/v1/generation?id=...`.
+
+They use `HERMES_ACCOUNTING_INTERNAL_TOKEN`, falling back to `API_SERVER_KEY`
+only when the dedicated token is absent. Responses contain no prompt, model
+response, OpenRouter key, or other secret. Lookup `404`, `429`, network, and
+`5xx` failures remain `pending`; a missing generation ID requires manual
+review. No catalog estimate becomes a debit.
+
+Durable V1 intentionally covers non-streaming Chat Completions only. Streaming
+and `/v1/responses` retain their existing immediate accounting behavior and
+must not be used as the Cabinet wallet-finalization path yet. Hermes does not
+mutate the Cabinet ledger; Cabinet consumes the journal/accounting contract in
+its own atomic wallet transaction.
 
 ## Verification
 
@@ -97,6 +117,10 @@ Mocked tests cover:
 - failed hidden streaming attempt followed by a successful retry;
 - direct summary calls and fail-closed auxiliary calls;
 - stable billing identity on Idempotency-Key replay;
+- persistent replay after restart, same-key/different-payload conflict, and
+  in-flight/unresolved fail-closed behavior;
+- pending generation reconciliation including multi-generation sums and
+  `404`/`429`/`5xx` retention;
 - evidence retention across mutable provider fallback;
 - exact-sum request rounding for sub-micro generation charges;
 - missing cost and missing generation ID;

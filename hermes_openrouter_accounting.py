@@ -15,11 +15,42 @@ from contextvars import ContextVar
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from typing import Any
 
+try:
+    from agent.durable_accounting import (
+        record_generation_evidence as _record_durable_generation,
+        record_request_accounting as _record_durable_accounting,
+        record_unresolved_evidence as _record_durable_unresolved,
+    )
+except ImportError:  # Local unit tests import this module outside the image.
+    from hermes_durable_accounting import (
+        record_generation_evidence as _record_durable_generation,
+        record_request_accounting as _record_durable_accounting,
+        record_unresolved_evidence as _record_durable_unresolved,
+    )
+
 
 MICRO_USD = Decimal("1000000")
 _CURRENT_ACCOUNTING_AGENT: ContextVar[Any | None] = ContextVar(
     "hermes_openrouter_accounting_agent", default=None
 )
+
+
+class DurableAccountingWriteError(InterruptedError):
+    """Abort the current Hermes attempt when durable evidence cannot be stored."""
+
+
+def _durable_generation_or_abort(record: dict[str, Any], configured_model: str) -> None:
+    try:
+        _record_durable_generation(record, configured_model)
+    except Exception as exc:
+        raise DurableAccountingWriteError("durable_accounting_write_failed") from exc
+
+
+def _durable_unresolved_or_abort(reason: str, configured_model: str) -> None:
+    try:
+        _record_durable_unresolved(reason, configured_model)
+    except Exception as exc:
+        raise DurableAccountingWriteError("durable_accounting_write_failed") from exc
 
 
 def _field(value: Any, name: str, default: Any = None) -> Any:
@@ -233,9 +264,17 @@ def record_openrouter_response(agent: Any, response: Any) -> bool:
                 existing["_evidence_conflict"] = True
             if sum(existing.get("tokens", {}).values()) == 0 and sum(record["tokens"].values()) > 0:
                 existing["tokens"] = record["tokens"]
+            _durable_generation_or_abort(
+                existing,
+                str(getattr(agent, "model", "") or "").strip(),
+            )
             return False
 
     records.append(record)
+    _durable_generation_or_abort(
+        record,
+        str(getattr(agent, "model", "") or "").strip(),
+    )
     return True
 
 
@@ -255,7 +294,7 @@ def record_openrouter_unresolved_attempt(
             "_openrouter_accounting_configured_model",
             str(getattr(agent, "model", "") or "").strip(),
         )
-    records.append({
+    unresolved = {
         "generation_id": None,
         "executed_provider": None,
         "executed_model": None,
@@ -269,7 +308,12 @@ def record_openrouter_unresolved_attempt(
         },
         "_actual_cost": None,
         "_unresolved_reason": str(reason or "provider_attempt_failed"),
-    })
+    }
+    records.append(unresolved)
+    _durable_unresolved_or_abort(
+        unresolved["_unresolved_reason"],
+        str(getattr(agent, "model", "") or "").strip(),
+    )
     return True
 
 
@@ -398,7 +442,7 @@ def build_openrouter_accounting(agent: Any, request_id: str) -> dict[str, Any] |
         or getattr(agent, "model", "")
         or ""
     ).strip()
-    return {
+    result = {
         "schema_version": 2,
         "request_id": str(request_id),
         "runtime": {
@@ -417,6 +461,8 @@ def build_openrouter_accounting(agent: Any, request_id: str) -> dict[str, Any] |
         "tokens": tokens,
         "cost": cost,
     }
+    _record_durable_accounting(result)
+    return result
 
 
 def accounting_for_request(value: Any, request_id: str) -> dict[str, Any] | None:
