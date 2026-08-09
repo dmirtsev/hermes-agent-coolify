@@ -1,7 +1,9 @@
+import contextvars
 import os
 import tempfile
 import unittest
 import urllib.error
+from concurrent.futures import ThreadPoolExecutor
 from decimal import Decimal
 from pathlib import Path
 from unittest.mock import patch
@@ -262,15 +264,93 @@ class DurableAccountingTests(unittest.TestCase):
             (),
             {"id": "gen-write-failure", "model": "provider/model", "usage": None},
         )()
-        with patch.object(
-            openrouter_accounting,
-            "_record_durable_generation",
-            side_effect=durable.JournalError("disk_unavailable"),
-        ):
-            with self.assertRaises(openrouter_accounting.DurableAccountingWriteError) as raised:
-                openrouter_accounting.record_openrouter_response(agent, response)
+        durable.begin_request("cabinet-write-failure", _payload("write-failure"))
+        with durable.durable_agent_request_scope(agent, "cabinet-write-failure"):
+            with patch.object(
+                openrouter_accounting,
+                "_record_durable_generation",
+                side_effect=durable.JournalError("disk_unavailable"),
+            ):
+                with self.assertRaises(
+                    openrouter_accounting.DurableAccountingWriteError
+                ) as raised:
+                    contextvars.Context().run(
+                        openrouter_accounting.record_openrouter_response,
+                        agent,
+                        response,
+                    )
         self.assertIsInstance(raised.exception, InterruptedError)
         self.assertNotIn("disk_unavailable", str(raised.exception))
+
+    def test_agent_binding_crosses_blank_thread_context(self):
+        key = "cabinet-cross-thread"
+        durable.begin_request(key, _payload("thread"))
+        agent = type(
+            "Agent",
+            (),
+            {
+                "provider": "openrouter",
+                "model": "configured/model",
+                "base_url": "https://openrouter.ai/api/v1",
+            },
+        )()
+        response = type(
+            "Response",
+            (),
+            {"id": "gen-cross-thread", "model": "provider/model", "usage": None},
+        )()
+
+        def worker():
+            self.assertIsNone(durable.current_request_key())
+            return openrouter_accounting.record_openrouter_response(agent, response)
+
+        with durable.durable_agent_request_scope(agent, key):
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                self.assertTrue(executor.submit(contextvars.Context().run, worker).result())
+        view = durable.get_request_view(key)
+        self.assertEqual(view["evidence"]["event_count"], 1)
+        self.assertEqual(view["evidence"]["generation_ids"], ["gen-cross-thread"])
+
+    def test_concurrent_request_keys_are_isolated_when_agent_is_reused(self):
+        keys = ("cabinet-concurrent-a", "cabinet-concurrent-b")
+        for key in keys:
+            durable.begin_request(key, _payload(key))
+        agent = type(
+            "Agent",
+            (),
+            {
+                "provider": "openrouter",
+                "model": "configured/model",
+                "base_url": "https://openrouter.ai/api/v1",
+            },
+        )()
+
+        def run(key):
+            generation_id = "gen-" + key.rsplit("-", 1)[-1]
+            response = type(
+                "Response",
+                (),
+                {"id": generation_id, "model": "provider/model", "usage": None},
+            )()
+            with durable.durable_agent_request_scope(agent, key):
+                openrouter_accounting.record_openrouter_response(agent, response)
+                accounting = openrouter_accounting.build_openrouter_accounting(
+                    agent, "acct-" + key, durable_request_key=key
+                )
+                return accounting["model_execution"]["upstream_generation_ids"]
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            futures = [executor.submit(run, key) for key in keys]
+            results = [future.result() for future in futures]
+        self.assertEqual(results, [["gen-a"], ["gen-b"]])
+        self.assertEqual(
+            durable.get_request_view(keys[0])["evidence"]["generation_ids"],
+            ["gen-a"],
+        )
+        self.assertEqual(
+            durable.get_request_view(keys[1])["evidence"]["generation_ids"],
+            ["gen-b"],
+        )
 
 
 if __name__ == "__main__":

@@ -520,7 +520,7 @@ from agent.durable_accounting import (
     RequestUnresolvedError as DurableRequestUnresolvedError,
     begin_request as durable_begin_request,
     complete_request as durable_complete_request,
-    durable_request_scope,
+    durable_agent_request_scope,
     fail_request as durable_fail_request,
     get_request_view as durable_get_request_view,
     internal_auth_token as durable_internal_auth_token,
@@ -769,11 +769,16 @@ replace_once(
             )
             usage = {
 """,
-    """            with durable_request_scope(accounting_request_key), openrouter_accounting_scope(agent):
+    """            with durable_agent_request_scope(agent, accounting_request_key), openrouter_accounting_scope(agent):
                 result = agent.run_conversation(
                     user_message=user_message,
                     conversation_history=conversation_history,
                     task_id=effective_task_id,
+                )
+                _durable_openrouter_accounting = build_openrouter_accounting(
+                    agent,
+                    request_id="hermesacct_" + uuid.uuid4().hex,
+                    durable_request_key=accounting_request_key,
                 )
             usage = {
 """,
@@ -795,9 +800,7 @@ replace_once(
                 "cache_read_tokens": getattr(agent, "session_cache_read_tokens", 0) or 0,
                 "cache_write_tokens": getattr(agent, "session_cache_write_tokens", 0) or 0,
                 "reasoning_tokens": getattr(agent, "session_reasoning_tokens", 0) or 0,
-                "_hermes_openrouter_accounting": build_openrouter_accounting(
-                    agent, request_id="hermesacct_" + uuid.uuid4().hex
-                ),
+                "_hermes_openrouter_accounting": _durable_openrouter_accounting,
             }
 """,
     "agent accounting aggregate",

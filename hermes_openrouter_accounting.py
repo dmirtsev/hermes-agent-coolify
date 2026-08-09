@@ -20,12 +20,14 @@ try:
         record_generation_evidence as _record_durable_generation,
         record_request_accounting as _record_durable_accounting,
         record_unresolved_evidence as _record_durable_unresolved,
+        request_key_for_agent as _request_key_for_agent,
     )
 except ImportError:  # Local unit tests import this module outside the image.
     from hermes_durable_accounting import (
         record_generation_evidence as _record_durable_generation,
         record_request_accounting as _record_durable_accounting,
         record_unresolved_evidence as _record_durable_unresolved,
+        request_key_for_agent as _request_key_for_agent,
     )
 
 
@@ -39,16 +41,24 @@ class DurableAccountingWriteError(InterruptedError):
     """Abort the current Hermes attempt when durable evidence cannot be stored."""
 
 
-def _durable_generation_or_abort(record: dict[str, Any], configured_model: str) -> None:
+def _durable_generation_or_abort(
+    record: dict[str, Any], configured_model: str, request_key: str | None
+) -> None:
     try:
-        _record_durable_generation(record, configured_model)
+        _record_durable_generation(
+            record, configured_model, request_key=request_key
+        )
     except Exception as exc:
         raise DurableAccountingWriteError("durable_accounting_write_failed") from exc
 
 
-def _durable_unresolved_or_abort(reason: str, configured_model: str) -> None:
+def _durable_unresolved_or_abort(
+    reason: str, configured_model: str, request_key: str | None
+) -> None:
     try:
-        _record_durable_unresolved(reason, configured_model)
+        _record_durable_unresolved(
+            reason, configured_model, request_key=request_key
+        )
     except Exception as exc:
         raise DurableAccountingWriteError("durable_accounting_write_failed") from exc
 
@@ -222,6 +232,7 @@ def record_openrouter_response(agent: Any, response: Any) -> bool:
     if response is None:
         return record_openrouter_unresolved_attempt(agent, "empty_provider_response")
 
+    request_key = _request_key_for_agent(agent)
     record = extract_openrouter_generation(response)
     records = getattr(agent, "_openrouter_accounting_generations", None)
     if not isinstance(records, list):
@@ -267,6 +278,7 @@ def record_openrouter_response(agent: Any, response: Any) -> bool:
             _durable_generation_or_abort(
                 existing,
                 str(getattr(agent, "model", "") or "").strip(),
+                request_key,
             )
             return False
 
@@ -274,6 +286,7 @@ def record_openrouter_response(agent: Any, response: Any) -> bool:
     _durable_generation_or_abort(
         record,
         str(getattr(agent, "model", "") or "").strip(),
+        request_key,
     )
     return True
 
@@ -284,6 +297,7 @@ def record_openrouter_unresolved_attempt(
     """Mark a dispatched attempt whose generation evidence never arrived."""
     if not _is_openrouter_agent(agent) and not (force and _has_openrouter_accounting(agent)):
         return False
+    request_key = _request_key_for_agent(agent)
     records = getattr(agent, "_openrouter_accounting_generations", None)
     if not isinstance(records, list):
         records = []
@@ -313,6 +327,7 @@ def record_openrouter_unresolved_attempt(
     _durable_unresolved_or_abort(
         unresolved["_unresolved_reason"],
         str(getattr(agent, "model", "") or "").strip(),
+        request_key,
     )
     return True
 
@@ -356,7 +371,12 @@ def _public_generation(record: dict[str, Any], sequence: int) -> dict[str, Any]:
     }
 
 
-def build_openrouter_accounting(agent: Any, request_id: str) -> dict[str, Any] | None:
+def build_openrouter_accounting(
+    agent: Any,
+    request_id: str,
+    *,
+    durable_request_key: str | None = None,
+) -> dict[str, Any] | None:
     """Build the public aggregate without using catalog estimates."""
     if not _has_openrouter_accounting(agent):
         return None
@@ -461,7 +481,8 @@ def build_openrouter_accounting(agent: Any, request_id: str) -> dict[str, Any] |
         "tokens": tokens,
         "cost": cost,
     }
-    _record_durable_accounting(result)
+    request_key = durable_request_key or _request_key_for_agent(agent)
+    _record_durable_accounting(result, request_key=request_key)
     return result
 
 
