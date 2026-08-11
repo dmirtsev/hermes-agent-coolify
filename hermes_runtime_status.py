@@ -8,7 +8,13 @@ state during teardown.
 
 from __future__ import annotations
 
+import socket
 from typing import Any, Mapping
+
+
+def runtime_status_owner_id() -> str:
+    """Return the container-local identity used for status-file ownership."""
+    return socket.gethostname()
 
 
 def runtime_status_write_is_foreign(
@@ -25,6 +31,11 @@ def runtime_status_write_is_foreign(
 
     if gateway_state == "starting" or not isinstance(existing, Mapping):
         return False
+
+    existing_owner = existing.get("owner_id")
+    current_owner = current.get("owner_id") or runtime_status_owner_id()
+    if existing_owner is not None and str(existing_owner) != str(current_owner):
+        return True
 
     existing_pid = existing.get("pid")
     current_pid = current.get("pid")
