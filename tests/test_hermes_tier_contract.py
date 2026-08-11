@@ -35,6 +35,27 @@ class HermesTierContractTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_production_template_is_valid_but_not_deployment_ready(self) -> None:
+        template = ROOT / "deploy" / "hermes-tiers" / "manifest.production.example.json"
+        valid = self.run_command("python3", "scripts/validate_hermes_tiers_manifest.py", str(template))
+        self.assertEqual(valid.returncode, 0, valid.stderr)
+        ready = self.run_command(
+            "python3",
+            "scripts/validate_hermes_tiers_manifest.py",
+            str(template),
+            "--deployment-ready",
+        )
+        self.assertNotEqual(ready.returncode, 0)
+        self.assertIn("wrapper_commit", ready.stderr)
+
+        manifest = json.loads(template.read_text(encoding="utf-8"))
+        self.assertEqual(manifest["environment"], "production")
+        self.assertNotIn("test", json.dumps(manifest))
+        self.assertEqual(
+            len({runtime["volume_name"] for runtime in manifest["runtimes"].values()}),
+            3,
+        )
+
     def test_duplicate_volume_is_rejected(self) -> None:
         manifest = json.loads((FIXTURES / "manifest.json").read_text(encoding="utf-8"))
         manifest["runtimes"]["strong"]["volume_name"] = manifest["runtimes"]["economy"]["volume_name"]

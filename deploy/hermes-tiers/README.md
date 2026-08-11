@@ -60,6 +60,30 @@ The OpenAI-compatible response `model` field is deliberately not accepted as
 proof of routing. The smoke check trusts only startup evidence derived from
 the runtime's actual persisted `config.yaml`.
 
+## Production preparation (not a deploy)
+
+`manifest.production.example.json` and `runtime.production.env.example` are
+intentionally incomplete templates. They contain `.invalid` endpoint origins,
+placeholder models and no credentials, so they cannot be used with
+`--deployment-ready`. This avoids copying a test application or test secret
+into production by accident.
+
+After an explicit production release decision, the release owner must create a
+private, untracked deployment manifest with:
+
+1. the exact approved wrapper SHA and three approved fixed model IDs;
+2. three production-only HTTPS origins and runtime IDs;
+3. three unique `/opt/data` volumes and never a copied test/legacy volume;
+4. independent `API_SERVER_KEY`, OpenRouter and accounting tokens for every
+   runtime, available at runtime only;
+5. the production `TP_KNOWLEDGE_MCP_*` values from the separate production
+   bridge configuration;
+6. an internal Coolify deployment record and `/health/detailed` smoke for every
+   tier, followed by a protected replay/accounting check from Cabinet.
+
+The public production endpoint is not a health assertion from the VPN route.
+Use Coolify/internal health evidence for the production wave.
+
 ## Usage and cost contract
 
 The wrapper now retains per-generation OpenRouter identity, native token
