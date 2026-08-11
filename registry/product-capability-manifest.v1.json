@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "repository": "hermes-agent",
+  "branch": "test",
+  "reviewed_through": "681e842f995c40054d1cedd44c37721ae2292327",
+  "catalog": {"repository": "dmirtsev/tp-architecture", "path": "registry/product-capability-catalog.v2.json", "version": 2},
+  "tracked_paths": ["hermes_main_wrapper.sh", "hermes_durable_accounting.py", "hermes_openrouter_accounting.py", "tp_knowledge_mcp_setup.sh", "docs/HERMES_SOURCE_ROUTING_POLICY.md"],
+  "functions": [
+    {
+      "key": "ai.hermes",
+      "surfaces": ["/v1/chat/completions", "/health", "hermes_durable_accounting.py", "docs/HERMES_SOURCE_ROUTING_POLICY.md"],
+      "status": "test",
+      "policy": "Hermes is an AI runtime: it uses only caller-approved context and routes canonical knowledge requests to TP Knowledge when configured."
+    }
+  ]
+}

@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "environment": "production",
+  "strategy": "isolated_fixed_runtime",
+  "wrapper_commit": "__SOURCE_COMMIT__",
+  "runtimes": {
+    "economy": {
+      "runtime_id": "hermes-production-economy",
+      "endpoint_url": "https://change-me-production-economy.invalid",
+      "provider": "openrouter",
+      "model_id": "change_me/economy-model",
+      "max_tokens": 4096,
+      "volume_name": "hermes-production-economy-data",
+      "api_server_key_ref": "coolify://production/hermes-economy/API_SERVER_KEY",
+      "openrouter_api_key_ref": "coolify://production/hermes-economy/OPENROUTER_API_KEY"
+    },
+    "balanced": {
+      "runtime_id": "hermes-production-balanced",
+      "endpoint_url": "https://change-me-production-balanced.invalid",
+      "provider": "openrouter",
+      "model_id": "change_me/balanced-model",
+      "max_tokens": 4096,
+      "volume_name": "hermes-production-balanced-data",
+      "api_server_key_ref": "coolify://production/hermes-balanced/API_SERVER_KEY",
+      "openrouter_api_key_ref": "coolify://production/hermes-balanced/OPENROUTER_API_KEY"
+    },
+    "strong": {
+      "runtime_id": "hermes-production-strong",
+      "endpoint_url": "https://change-me-production-strong.invalid",
+      "provider": "openrouter",
+      "model_id": "change_me/strong-model",
+      "max_tokens": 4096,
+      "volume_name": "hermes-production-strong-data",
+      "api_server_key_ref": "coolify://production/hermes-strong/API_SERVER_KEY",
+      "openrouter_api_key_ref": "coolify://production/hermes-strong/OPENROUTER_API_KEY"
+    }
+  }
+}

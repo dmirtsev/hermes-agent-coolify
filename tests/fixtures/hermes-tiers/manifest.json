@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "environment": "test",
+  "strategy": "isolated_fixed_runtime",
+  "wrapper_commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "runtimes": {
+    "economy": {
+      "runtime_id": "hermes-test-economy",
+      "endpoint_url": "https://economy.example.invalid",
+      "provider": "openrouter",
+      "model_id": "example/economy-model",
+      "max_tokens": 2048,
+      "volume_name": "hermes-test-economy-data",
+      "api_server_key_ref": "coolify://test/hermes-economy/API_SERVER_KEY",
+      "openrouter_api_key_ref": "coolify://test/hermes-economy/OPENROUTER_API_KEY"
+    },
+    "balanced": {
+      "runtime_id": "hermes-test-balanced",
+      "endpoint_url": "https://balanced.example.invalid",
+      "provider": "openrouter",
+      "model_id": "example/balanced-model",
+      "max_tokens": 4096,
+      "volume_name": "hermes-test-balanced-data",
+      "api_server_key_ref": "coolify://test/hermes-balanced/API_SERVER_KEY",
+      "openrouter_api_key_ref": "coolify://test/hermes-balanced/OPENROUTER_API_KEY"
+    },
+    "strong": {
+      "runtime_id": "hermes-test-strong",
+      "endpoint_url": "https://strong.example.invalid",
+      "provider": "openrouter",
+      "model_id": "example/strong-model",
+      "max_tokens": 8192,
+      "volume_name": "hermes-test-strong-data",
+      "api_server_key_ref": "coolify://test/hermes-strong/API_SERVER_KEY",
+      "openrouter_api_key_ref": "coolify://test/hermes-strong/OPENROUTER_API_KEY"
+    }
+  }
+}
