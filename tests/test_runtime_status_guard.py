@@ -8,7 +8,11 @@ import unittest
 from unittest import mock
 from pathlib import Path
 
-from hermes_runtime_status import runtime_status_owner_id, runtime_status_write_is_foreign
+from hermes_runtime_status import (
+    runtime_status_owner_id,
+    runtime_status_write_is_foreign,
+    runtime_status_write_lock,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -66,6 +70,12 @@ class RuntimeStatusGuardTests(unittest.TestCase):
             with mock.patch("hermes_runtime_status.socket.gethostname", return_value="fallback"):
                 self.assertEqual(runtime_status_owner_id(), "fallback")
 
+    def test_status_write_lock_is_usable_for_a_shared_path(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            status_path = Path(directory) / "gateway_state.json"
+            with runtime_status_write_lock(status_path):
+                self.assertTrue(status_path.with_suffix(".json.lock").exists())
+
     def test_patch_is_fail_closed_and_applies_once(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             temp_root = Path(directory)
@@ -77,6 +87,7 @@ class RuntimeStatusGuardTests(unittest.TestCase):
             status.write_text(
                 "from utils import atomic_json_write\n\n"
                 "def write_runtime_status(path, payload, current_record, gateway_state):\n"
+                "    payload = _read_json_file(path) or _build_runtime_status_record()\n"
                 "    payload[\"start_time\"] = current_record[\"start_time\"]\n"
                 "    _write_json_file(path, payload)\n",
                 encoding="utf-8",
@@ -97,6 +108,7 @@ class RuntimeStatusGuardTests(unittest.TestCase):
             patched = status.read_text(encoding="utf-8")
             self.assertIn("runtime_status_write_is_foreign", patched)
             self.assertIn('payload["owner_id"] = runtime_status_owner_id()', patched)
+            self.assertIn("with runtime_status_write_lock(path):", patched)
             self.assertIn("_read_json_file(path)", patched)
 
             second = subprocess.run(
