@@ -33,6 +33,12 @@ Add a persistent volume:
 
 Hermes stores config, API keys, sessions, memories, skills and logs in `/opt/data`.
 
+The wrapper starts the gateway through Hermes' built-in s6 supervisor. Its
+initial state is `running` only on a fresh volume; later restarts preserve the
+last saved state. Do not override the Docker command with `gateway run`: that
+would start a second gateway alongside the supervisor and makes a redeploy
+unhealthy.
+
 ## Environment variables
 
 Minimum dashboard configuration:

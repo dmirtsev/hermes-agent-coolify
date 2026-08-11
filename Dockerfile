@@ -9,6 +9,7 @@ LABEL org.opencontainers.image.source="https://github.com/dmirtsev/hermes-agent-
       org.opencontainers.image.base.digest="sha256:3326d81d12518be9b3ada3546b4abf97c2ac663e72978a7f8f27503c1ccaedce"
 
 ENV HERMES_HOME=/opt/data \
+    HERMES_GATEWAY_BOOTSTRAP_STATE=running \
     HERMES_WRAPPER_COMMIT=${SOURCE_COMMIT} \
     HERMES_WRAPPER_BUILD_DATE=${BUILD_DATE} \
     HERMES_UPSTREAM_IMAGE_DIGEST=sha256:3326d81d12518be9b3ada3546b4abf97c2ac663e72978a7f8f27503c1ccaedce \
@@ -48,4 +49,9 @@ RUN chmod +x /opt/hermes/tp_knowledge_mcp_setup.sh && \
     chmod +x /etc/cont-init.d/02-hermes-fixed-model
 
 ENTRYPOINT ["/init", "/opt/hermes/hermes_main_wrapper.sh"]
-CMD ["gateway", "run", "--no-supervise", "-v"]
+# Hermes restores the gateway as an s6-managed service from the persistent
+# runtime state during cont-init.  Starting `gateway run` here as well creates
+# a second gateway on every restart once that state is `running`; the duplicate
+# correctly exits, but makes the whole container look failed to the platform.
+# Keep PID 1 alive and let the reconciled s6 service own the sole gateway.
+CMD ["sleep", "infinity"]
