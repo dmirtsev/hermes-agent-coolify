@@ -1,0 +1,55 @@
+#!/usr/bin/env python3
+"""Protect the pinned Hermes runtime-status file from stale writers.
+
+The wrapper applies this narrow patch only when the reviewed v0.16.0 source
+still has the expected anchors.  Source drift stops the image build rather
+than weakening runtime-status ownership silently.
+"""
+
+from __future__ import annotations
+
+import os
+from pathlib import Path
+
+
+ROOT = Path(os.environ.get("HERMES_SOURCE_ROOT", "/opt/hermes"))
+STATUS = Path(
+    os.environ.get("HERMES_STATUS_PATH", str(ROOT / "gateway" / "status.py"))
+)
+GUARD = ROOT / "agent" / "runtime_status_guard.py"
+
+IMPORT_ANCHOR = "from utils import atomic_json_write\n"
+WRITE_ANCHOR = "    _write_json_file(path, payload)\n"
+GUARD_IMPORT = (
+    "from utils import atomic_json_write\n"
+    "from agent.runtime_status_guard import runtime_status_write_is_foreign\n"
+)
+GUARDED_WRITE = """    if runtime_status_write_is_foreign(
+        _read_json_file(path),
+        current_record,
+        gateway_state,
+    ):
+        return
+    _write_json_file(path, payload)
+"""
+
+
+def replace_once(source: str, old: str, new: str, name: str) -> str:
+    count = source.count(old)
+    if count != 1:
+        raise SystemExit(f"expected exactly one {name} anchor in {STATUS}, found {count}")
+    return source.replace(old, new, 1)
+
+
+if not STATUS.is_file():
+    raise SystemExit(f"pinned Hermes status source is missing: {STATUS}")
+if not GUARD.is_file():
+    raise SystemExit(f"runtime status guard is missing: {GUARD}")
+
+source = STATUS.read_text(encoding="utf-8")
+if "runtime_status_write_is_foreign" in source:
+    raise SystemExit("runtime-status ownership patch is already present")
+
+source = replace_once(source, IMPORT_ANCHOR, GUARD_IMPORT, "guard import")
+source = replace_once(source, WRITE_ANCHOR, GUARDED_WRITE, "runtime status write")
+STATUS.write_text(source, encoding="utf-8")

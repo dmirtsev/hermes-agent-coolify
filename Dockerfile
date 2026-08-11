@@ -21,13 +21,16 @@ COPY hermes_release_evidence.sh /opt/hermes/hermes_release_evidence.sh
 COPY hermes_main_wrapper.sh /opt/hermes/hermes_main_wrapper.sh
 COPY hermes_openrouter_accounting.py /opt/hermes/agent/openrouter_accounting.py
 COPY hermes_durable_accounting.py /opt/hermes/agent/durable_accounting.py
+COPY hermes_runtime_status.py /opt/hermes/agent/runtime_status_guard.py
 COPY patch_hermes_health.py /opt/hermes-wrapper/patch_hermes_health.py
 COPY patch_hermes_openrouter_accounting.py /opt/hermes-wrapper/patch_hermes_openrouter_accounting.py
+COPY patch_hermes_runtime_status.py /opt/hermes-wrapper/patch_hermes_runtime_status.py
 RUN chmod +x /opt/hermes/tp_knowledge_mcp_setup.sh && \
     chmod +x /opt/hermes/hermes_fixed_model_setup.sh && \
     chmod +x /opt/hermes/hermes_release_evidence.sh && \
     chmod +x /opt/hermes/hermes_main_wrapper.sh && \
     /opt/hermes/.venv/bin/python /opt/hermes-wrapper/patch_hermes_health.py && \
+    /opt/hermes/.venv/bin/python /opt/hermes-wrapper/patch_hermes_runtime_status.py && \
     /opt/hermes/.venv/bin/python /opt/hermes-wrapper/patch_hermes_openrouter_accounting.py && \
     rm -f /etc/s6-overlay/s6-rc.d/user/contents.d/dashboard && \
     printf '%s\n' \
