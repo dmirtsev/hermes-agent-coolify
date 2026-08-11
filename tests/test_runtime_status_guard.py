@@ -49,6 +49,15 @@ class RuntimeStatusGuardTests(unittest.TestCase):
             )
         )
 
+    def test_same_pid_and_start_from_other_container_is_foreign(self) -> None:
+        self.assertTrue(
+            runtime_status_write_is_foreign(
+                {"pid": 161, "start_time": 582083783, "owner_id": "replacement"},
+                {"pid": 161, "start_time": 582083783, "owner_id": "old"},
+                "stopped",
+            )
+        )
+
     def test_patch_is_fail_closed_and_applies_once(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             temp_root = Path(directory)
@@ -60,6 +69,7 @@ class RuntimeStatusGuardTests(unittest.TestCase):
             status.write_text(
                 "from utils import atomic_json_write\n\n"
                 "def write_runtime_status(path, payload, current_record, gateway_state):\n"
+                "    payload[\"start_time\"] = current_record[\"start_time\"]\n"
                 "    _write_json_file(path, payload)\n",
                 encoding="utf-8",
             )
@@ -78,6 +88,7 @@ class RuntimeStatusGuardTests(unittest.TestCase):
             self.assertEqual(first.returncode, 0, first.stderr)
             patched = status.read_text(encoding="utf-8")
             self.assertIn("runtime_status_write_is_foreign", patched)
+            self.assertIn('payload["owner_id"] = runtime_status_owner_id()', patched)
             self.assertIn("_read_json_file(path)", patched)
 
             second = subprocess.run(

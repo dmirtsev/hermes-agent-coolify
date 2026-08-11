@@ -22,8 +22,13 @@ IMPORT_ANCHOR = "from utils import atomic_json_write\n"
 WRITE_ANCHOR = "    _write_json_file(path, payload)\n"
 GUARD_IMPORT = (
     "from utils import atomic_json_write\n"
-    "from agent.runtime_status_guard import runtime_status_write_is_foreign\n"
+    "from agent.runtime_status_guard import (\n"
+    "    runtime_status_owner_id,\n"
+    "    runtime_status_write_is_foreign,\n"
+    ")\n"
 )
+OWNER_ANCHOR = '    payload["start_time"] = current_record["start_time"]\n'
+OWNER_WRITE = OWNER_ANCHOR + '    payload["owner_id"] = runtime_status_owner_id()\n'
 GUARDED_WRITE = """    if runtime_status_write_is_foreign(
         _read_json_file(path),
         current_record,
@@ -51,5 +56,6 @@ if "runtime_status_write_is_foreign" in source:
     raise SystemExit("runtime-status ownership patch is already present")
 
 source = replace_once(source, IMPORT_ANCHOR, GUARD_IMPORT, "guard import")
+source = replace_once(source, OWNER_ANCHOR, OWNER_WRITE, "runtime status owner")
 source = replace_once(source, WRITE_ANCHOR, GUARDED_WRITE, "runtime status write")
 STATUS.write_text(source, encoding="utf-8")
