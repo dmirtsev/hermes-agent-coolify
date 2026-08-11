@@ -8,13 +8,22 @@ state during teardown.
 
 from __future__ import annotations
 
+import os
 import socket
 from typing import Any, Mapping
 
 
 def runtime_status_owner_id() -> str:
-    """Return the container-local identity used for status-file ownership."""
-    return socket.gethostname()
+    """Return a container-local identity used for status-file ownership.
+
+    Coolify may set the same hostname for every replacement container.  A PID
+    namespace identifier stays distinct across those overlapping containers;
+    hostname is only a portability fallback outside Linux namespaces.
+    """
+    try:
+        return os.readlink("/proc/self/ns/pid")
+    except OSError:
+        return socket.gethostname()
 
 
 def runtime_status_write_is_foreign(

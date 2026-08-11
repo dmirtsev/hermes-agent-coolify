@@ -5,9 +5,10 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
-from hermes_runtime_status import runtime_status_write_is_foreign
+from hermes_runtime_status import runtime_status_owner_id, runtime_status_write_is_foreign
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -57,6 +58,13 @@ class RuntimeStatusGuardTests(unittest.TestCase):
                 "stopped",
             )
         )
+
+    def test_owner_id_prefers_pid_namespace_and_has_portable_fallback(self) -> None:
+        with mock.patch("hermes_runtime_status.os.readlink", return_value="pid:[42]"):
+            self.assertEqual(runtime_status_owner_id(), "pid:[42]")
+        with mock.patch("hermes_runtime_status.os.readlink", side_effect=OSError):
+            with mock.patch("hermes_runtime_status.socket.gethostname", return_value="fallback"):
+                self.assertEqual(runtime_status_owner_id(), "fallback")
 
     def test_patch_is_fail_closed_and_applies_once(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
