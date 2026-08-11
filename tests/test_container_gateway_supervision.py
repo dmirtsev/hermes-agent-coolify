@@ -19,7 +19,6 @@ class ContainerGatewaySupervisionTests(unittest.TestCase):
         """
         dockerfile = DOCKERFILE.read_text(encoding="utf-8")
 
-        self.assertIn("HERMES_GATEWAY_BOOTSTRAP_STATE=running", dockerfile)
-        self.assertIn('CMD ["sleep", "infinity"]', dockerfile)
-        self.assertNotIn('CMD ["gateway", "run"', dockerfile)
-
+        self.assertIn("HERMES_GATEWAY_NO_SUPERVISE=true", dockerfile)
+        self.assertIn('CMD ["gateway", "run", "--no-supervise", "-v"]', dockerfile)
+        self.assertIn("patch_hermes_container_boot.py", dockerfile)

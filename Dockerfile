@@ -9,7 +9,7 @@ LABEL org.opencontainers.image.source="https://github.com/dmirtsev/hermes-agent-
       org.opencontainers.image.base.digest="sha256:3326d81d12518be9b3ada3546b4abf97c2ac663e72978a7f8f27503c1ccaedce"
 
 ENV HERMES_HOME=/opt/data \
-    HERMES_GATEWAY_BOOTSTRAP_STATE=running \
+    HERMES_GATEWAY_NO_SUPERVISE=true \
     HERMES_WRAPPER_COMMIT=${SOURCE_COMMIT} \
     HERMES_WRAPPER_BUILD_DATE=${BUILD_DATE} \
     HERMES_UPSTREAM_IMAGE_DIGEST=sha256:3326d81d12518be9b3ada3546b4abf97c2ac663e72978a7f8f27503c1ccaedce \
@@ -26,12 +26,14 @@ COPY hermes_runtime_status.py /opt/hermes/agent/runtime_status_guard.py
 COPY patch_hermes_health.py /opt/hermes-wrapper/patch_hermes_health.py
 COPY patch_hermes_openrouter_accounting.py /opt/hermes-wrapper/patch_hermes_openrouter_accounting.py
 COPY patch_hermes_runtime_status.py /opt/hermes-wrapper/patch_hermes_runtime_status.py
+COPY patch_hermes_container_boot.py /opt/hermes-wrapper/patch_hermes_container_boot.py
 RUN chmod +x /opt/hermes/tp_knowledge_mcp_setup.sh && \
     chmod +x /opt/hermes/hermes_fixed_model_setup.sh && \
     chmod +x /opt/hermes/hermes_release_evidence.sh && \
     chmod +x /opt/hermes/hermes_main_wrapper.sh && \
     /opt/hermes/.venv/bin/python /opt/hermes-wrapper/patch_hermes_health.py && \
     /opt/hermes/.venv/bin/python /opt/hermes-wrapper/patch_hermes_runtime_status.py && \
+    /opt/hermes/.venv/bin/python /opt/hermes-wrapper/patch_hermes_container_boot.py && \
     /opt/hermes/.venv/bin/python /opt/hermes-wrapper/patch_hermes_openrouter_accounting.py && \
     rm -f /etc/s6-overlay/s6-rc.d/user/contents.d/dashboard && \
     printf '%s\n' \
@@ -49,9 +51,6 @@ RUN chmod +x /opt/hermes/tp_knowledge_mcp_setup.sh && \
     chmod +x /etc/cont-init.d/02-hermes-fixed-model
 
 ENTRYPOINT ["/init", "/opt/hermes/hermes_main_wrapper.sh"]
-# Hermes restores the gateway as an s6-managed service from the persistent
-# runtime state during cont-init.  Starting `gateway run` here as well creates
-# a second gateway on every restart once that state is `running`; the duplicate
-# correctly exits, but makes the whole container look failed to the platform.
-# Keep PID 1 alive and let the reconciled s6 service own the sole gateway.
-CMD ["sleep", "infinity"]
+# Run one foreground gateway; the patched reconciler registers the s6 slot but
+# deliberately leaves it down, so redeploys cannot create a second instance.
+CMD ["gateway", "run", "--no-supervise", "-v"]
