@@ -9,6 +9,7 @@ than weakening runtime-status ownership silently.
 from __future__ import annotations
 
 import os
+from textwrap import indent
 from pathlib import Path
 
 
@@ -24,11 +25,13 @@ GUARD_IMPORT = (
     "from utils import atomic_json_write\n"
     "from agent.runtime_status_guard import (\n"
     "    runtime_status_owner_id,\n"
+    "    runtime_status_write_lock,\n"
     "    runtime_status_write_is_foreign,\n"
     ")\n"
 )
 OWNER_ANCHOR = '    payload["start_time"] = current_record["start_time"]\n'
 OWNER_WRITE = OWNER_ANCHOR + '    payload["owner_id"] = runtime_status_owner_id()\n'
+PAYLOAD_ANCHOR = "    payload = _read_json_file(path) or _build_runtime_status_record()\n"
 GUARDED_WRITE = """    if runtime_status_write_is_foreign(
         _read_json_file(path),
         current_record,
@@ -56,6 +59,20 @@ if "runtime_status_write_is_foreign" in source:
     raise SystemExit("runtime-status ownership patch is already present")
 
 source = replace_once(source, IMPORT_ANCHOR, GUARD_IMPORT, "guard import")
-source = replace_once(source, OWNER_ANCHOR, OWNER_WRITE, "runtime status owner")
-source = replace_once(source, WRITE_ANCHOR, GUARDED_WRITE, "runtime status write")
+start = source.find(PAYLOAD_ANCHOR)
+if start < 0:
+    raise SystemExit(f"expected runtime status payload anchor in {STATUS}")
+end = source.find(WRITE_ANCHOR, start)
+if end < 0:
+    raise SystemExit(f"expected runtime status write anchor in {STATUS}")
+end += len(WRITE_ANCHOR)
+body = source[start:end]
+body = replace_once(body, OWNER_ANCHOR, OWNER_WRITE, "runtime status owner")
+body = replace_once(body, WRITE_ANCHOR, GUARDED_WRITE, "runtime status write")
+source = (
+    source[:start]
+    + "    with runtime_status_write_lock(path):\n"
+    + indent(body, "    ")
+    + source[end:]
+)
 STATUS.write_text(source, encoding="utf-8")

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import os
 import socket
+from contextlib import contextmanager
 from typing import Any, Mapping
 
 
@@ -24,6 +25,29 @@ def runtime_status_owner_id() -> str:
         return os.readlink("/proc/self/ns/pid")
     except OSError:
         return socket.gethostname()
+
+
+@contextmanager
+def runtime_status_write_lock(path: Any):
+    """Serialize the complete status read/check/write sequence on shared data.
+
+    Atomic replacement alone cannot prevent an old container from reading the
+    file before a replacement claims it and writing after that claim.  Linux
+    Coolify volumes support advisory ``flock``; unsupported platforms retain
+    the previous ownership check rather than failing gateway startup.
+    """
+    try:
+        import fcntl
+
+        lock_path = f"{path}.lock"
+        with open(lock_path, "a+", encoding="utf-8") as lock_file:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+    except (ImportError, OSError):
+        yield
 
 
 def runtime_status_write_is_foreign(
