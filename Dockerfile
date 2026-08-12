@@ -20,6 +20,7 @@ COPY tp_knowledge_mcp_setup.sh /opt/hermes/tp_knowledge_mcp_setup.sh
 COPY hermes_fixed_model_setup.sh /opt/hermes/hermes_fixed_model_setup.sh
 COPY hermes_release_evidence.sh /opt/hermes/hermes_release_evidence.sh
 COPY hermes_main_wrapper.sh /opt/hermes/hermes_main_wrapper.sh
+COPY hermes_gateway_launcher.sh /opt/hermes/hermes_gateway_launcher.sh
 COPY hermes_openrouter_accounting.py /opt/hermes/agent/openrouter_accounting.py
 COPY hermes_durable_accounting.py /opt/hermes/agent/durable_accounting.py
 COPY hermes_runtime_status.py /opt/hermes/agent/runtime_status_guard.py
@@ -31,6 +32,7 @@ RUN chmod +x /opt/hermes/tp_knowledge_mcp_setup.sh && \
     chmod +x /opt/hermes/hermes_fixed_model_setup.sh && \
     chmod +x /opt/hermes/hermes_release_evidence.sh && \
     chmod +x /opt/hermes/hermes_main_wrapper.sh && \
+    chmod +x /opt/hermes/hermes_gateway_launcher.sh && \
     /opt/hermes/.venv/bin/python /opt/hermes-wrapper/patch_hermes_health.py && \
     /opt/hermes/.venv/bin/python /opt/hermes-wrapper/patch_hermes_runtime_status.py && \
     /opt/hermes/.venv/bin/python /opt/hermes-wrapper/patch_hermes_container_boot.py && \
@@ -53,4 +55,4 @@ RUN chmod +x /opt/hermes/tp_knowledge_mcp_setup.sh && \
 ENTRYPOINT ["/init", "/opt/hermes/hermes_main_wrapper.sh"]
 # Run one foreground gateway; the patched reconciler registers the s6 slot but
 # deliberately leaves it down, so redeploys cannot create a second instance.
-CMD ["gateway", "run", "--no-supervise", "-v"]
+CMD ["/opt/hermes/hermes_gateway_launcher.sh"]
