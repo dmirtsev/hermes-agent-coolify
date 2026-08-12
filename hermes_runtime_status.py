@@ -17,12 +17,13 @@ from typing import Any, Mapping
 def runtime_status_owner_id() -> str:
     """Return a container-local identity used for status-file ownership.
 
-    Coolify may set the same hostname for every replacement container.  A PID
-    namespace identifier stays distinct across those overlapping containers;
-    hostname is only a portability fallback outside Linux namespaces.
+    Keep both hostname and PID namespace.  A pinned wrapper from an older
+    deploy may have recorded only one of them; the composite identity makes
+    that older container fail the ownership check after a replacement claims
+    the status record.
     """
     try:
-        return os.readlink("/proc/self/ns/pid")
+        return f"{socket.gethostname()}|{os.readlink('/proc/self/ns/pid')}"
     except OSError:
         return socket.gethostname()
 
