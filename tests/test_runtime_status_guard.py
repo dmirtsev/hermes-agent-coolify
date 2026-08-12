@@ -65,7 +65,8 @@ class RuntimeStatusGuardTests(unittest.TestCase):
 
     def test_owner_id_prefers_pid_namespace_and_has_portable_fallback(self) -> None:
         with mock.patch("hermes_runtime_status.os.readlink", return_value="pid:[42]"):
-            self.assertEqual(runtime_status_owner_id(), "pid:[42]")
+            with mock.patch("hermes_runtime_status.socket.gethostname", return_value="runtime"):
+                self.assertEqual(runtime_status_owner_id(), "runtime|pid:[42]")
         with mock.patch("hermes_runtime_status.os.readlink", side_effect=OSError):
             with mock.patch("hermes_runtime_status.socket.gethostname", return_value="fallback"):
                 self.assertEqual(runtime_status_owner_id(), "fallback")
