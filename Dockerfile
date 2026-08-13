@@ -16,6 +16,12 @@ ENV HERMES_HOME=/opt/data \
     HERMES_UPSTREAM_REVISION=a38003be3d8ce87565915105b2d6261ba2cdb723 \
     HERMES_UPSTREAM_VERSION=0.16.0
 
+# The upstream gateway builds its system prompt by walking from the current
+# directory to a possible Git root. Coolify starts the image from /root, while
+# the Hermes worker runs without permission to stat /root/.git. Keep every
+# gateway turn in the readable persistent Hermes home instead.
+WORKDIR /opt/data
+
 COPY tp_knowledge_mcp_setup.sh /opt/hermes/tp_knowledge_mcp_setup.sh
 COPY hermes_fixed_model_setup.sh /opt/hermes/hermes_fixed_model_setup.sh
 COPY hermes_release_evidence.sh /opt/hermes/hermes_release_evidence.sh

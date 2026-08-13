@@ -5,6 +5,11 @@
 # failed deployment.
 set -eu
 
+# Be explicit even if an orchestrator overrides Docker's WORKDIR. The Hermes
+# prompt builder inspects parent directories and must never inherit /root as
+# its current directory after the worker drops privileges.
+cd "${HERMES_HOME:-/opt/data}"
+
 attempt=1
 max_attempts=12
 while [ "$attempt" -le "$max_attempts" ]; do
