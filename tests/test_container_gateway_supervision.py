@@ -35,6 +35,8 @@ class ContainerGatewaySupervisionTests(unittest.TestCase):
         dockerfile = DOCKERFILE.read_text(encoding="utf-8")
         launcher = LAUNCHER.read_text(encoding="utf-8")
 
+        self.assertIn("TERMINAL_CWD=/opt/data", dockerfile)
         self.assertIn("WORKDIR /opt/data", dockerfile)
-        self.assertIn('cd "${HERMES_HOME:-/opt/data}"', launcher)
+        self.assertIn("export TERMINAL_CWD=", launcher)
+        self.assertIn('cd "$TERMINAL_CWD"', launcher)
         self.assertNotIn("cd /root", launcher)

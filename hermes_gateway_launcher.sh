@@ -8,7 +8,8 @@ set -eu
 # Be explicit even if an orchestrator overrides Docker's WORKDIR. The Hermes
 # prompt builder inspects parent directories and must never inherit /root as
 # its current directory after the worker drops privileges.
-cd "${HERMES_HOME:-/opt/data}"
+export TERMINAL_CWD="${TERMINAL_CWD:-${HERMES_HOME:-/opt/data}}"
+cd "$TERMINAL_CWD"
 
 attempt=1
 max_attempts=12
