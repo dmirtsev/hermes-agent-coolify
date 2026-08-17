@@ -85,7 +85,7 @@ mcp_servers:
     headers:
       Authorization: "Bearer ${MCP_TP_KNOWLEDGE_TEST_API_KEY}"
     tools:
-      include: ["knowledge_answer_context"]
+      include: ["knowledge_answer_context", "product_knowledge_answer_context"]
       resources: false
       prompts: false
 ```
@@ -214,7 +214,8 @@ Infrastructure checks that do not require LLM tokens:
 - Hermes API rejects missing `API_SERVER_KEY` with `401`;
 - MCP Bridge rejects missing Bearer token with `401`;
 - Hermes registers `tp_knowledge_test`;
-- Hermes sees `knowledge_answer_context`;
+- Hermes sees `knowledge_answer_context` and `product_knowledge_answer_context`;
+- product recommendations are accepted only with `hermes_product_gate.state=hermes_recommendable` and `recommendationAllowed=true`;
 - direct MCP call to `knowledge_answer_context` returns context from `luna`.
 
 ## OpenRouter accounting response
