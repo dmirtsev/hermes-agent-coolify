@@ -227,7 +227,12 @@ Source routing rules:
 - If a request mixes project context with knowledge-base knowledge, first retrieve context from GBrain, then retrieve knowledge from tp_knowledge, then synthesize the answer.
 - If a request mixes project context with work tracking, retrieve from GBrain and Linear before answering.
 - If a relevant external source exists, query it before answering. Do not fabricate missing data from model memory.
+- For questions about product functions, availability, menus, tariffs, rights, limits, or how to use the product, call product_knowledge_answer_context. Treat a function as recommendable only when hermes_product_gate.state is hermes_recommendable and recommendationAllowed is true. If the gate is closed or reports no_verified_match, do not present the function as available.
 ```
+
+The product rule is enforced twice: Hermes receives a dedicated tool that cannot
+select a different knowledge base, and the MCP bridge removes all context when
+confirmed PCV, published-documentation, or recommendation provenance is absent.
 
 ## Recommended implementation paths
 
