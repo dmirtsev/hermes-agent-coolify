@@ -9,12 +9,18 @@ LABEL org.opencontainers.image.source="https://github.com/dmirtsev/hermes-agent-
       org.opencontainers.image.base.digest="sha256:3326d81d12518be9b3ada3546b4abf97c2ac663e72978a7f8f27503c1ccaedce"
 
 ENV HERMES_HOME=/opt/data \
+    TERMINAL_CWD=/opt/data \
     HERMES_GATEWAY_NO_SUPERVISE=true \
     HERMES_WRAPPER_COMMIT=${SOURCE_COMMIT} \
     HERMES_WRAPPER_BUILD_DATE=${BUILD_DATE} \
     HERMES_UPSTREAM_IMAGE_DIGEST=sha256:3326d81d12518be9b3ada3546b4abf97c2ac663e72978a7f8f27503c1ccaedce \
     HERMES_UPSTREAM_REVISION=a38003be3d8ce87565915105b2d6261ba2cdb723 \
     HERMES_UPSTREAM_VERSION=0.16.0
+
+# The upstream gateway uses TERMINAL_CWD as the explicit logical working
+# directory for prompt context discovery. Without it, the fallback launch
+# directory can remain /root even after the wrapper changes its shell cwd.
+WORKDIR /opt/data
 
 COPY tp_knowledge_mcp_setup.sh /opt/hermes/tp_knowledge_mcp_setup.sh
 COPY hermes_fixed_model_setup.sh /opt/hermes/hermes_fixed_model_setup.sh

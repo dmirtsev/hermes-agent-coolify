@@ -184,6 +184,7 @@ if yaml is None:
     tools:
       include:
       - knowledge_answer_context
+      - product_knowledge_answer_context
       resources: false
       prompts: false
 platforms:
@@ -219,7 +220,10 @@ else:
         "connect_timeout": 60,
         "timeout": 300,
         "tools": {
-            "include": ["knowledge_answer_context"],
+            "include": [
+                "knowledge_answer_context",
+                "product_knowledge_answer_context",
+            ],
             "resources": False,
             "prompts": False,
         },

@@ -30,3 +30,13 @@ class ContainerGatewaySupervisionTests(unittest.TestCase):
         self.assertIn("max_attempts=12", launcher)
         self.assertIn("hermes gateway run --no-supervise -v", launcher)
         self.assertIn("sleep 5", launcher)
+
+    def test_gateway_uses_a_worker_readable_working_directory(self) -> None:
+        dockerfile = DOCKERFILE.read_text(encoding="utf-8")
+        launcher = LAUNCHER.read_text(encoding="utf-8")
+
+        self.assertIn("TERMINAL_CWD=/opt/data", dockerfile)
+        self.assertIn("WORKDIR /opt/data", dockerfile)
+        self.assertIn("export TERMINAL_CWD=", launcher)
+        self.assertIn('cd "$TERMINAL_CWD"', launcher)
+        self.assertNotIn("cd /root", launcher)
