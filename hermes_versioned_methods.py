@@ -59,6 +59,39 @@ def _method_ref(value: Any, label: str) -> tuple[str, str, str]:
     return family_id, version, content_hash
 
 
+def _require_bool(value: Any, label: str) -> bool:
+    if not isinstance(value, bool):
+        raise VersionedMethodContextError(f"{label} must be boolean")
+    return value
+
+
+def _require_provenance_sources(value: Any) -> list[dict[str, Any]]:
+    provenance = _require_mapping(value, "method_version.provenance")
+    sources = provenance.get("sources")
+    if not isinstance(sources, list) or not sources:
+        raise VersionedMethodContextError("published method provenance sources are required")
+    allowed_rights = {
+        "owned",
+        "licensed",
+        "public_domain",
+        "permission_recorded",
+        "restricted",
+    }
+    normalized = []
+    for index, item in enumerate(sources):
+        source = _require_mapping(item, f"method_version.provenance.sources[{index}]")
+        normalized_source = {
+            "source_id": _require_string(source.get("source_id"), "source.source_id"),
+            "source_version": _require_string(source.get("source_version"), "source.source_version"),
+            "locator": _require_string(source.get("locator"), "source.locator"),
+            "rights_status": _require_string(source.get("rights_status"), "source.rights_status"),
+        }
+        if normalized_source["rights_status"] not in allowed_rights:
+            raise VersionedMethodContextError("source.rights_status is invalid")
+        normalized.append(normalized_source)
+    return normalized
+
+
 def prepare_versioned_method_context(value: Any) -> VersionedMethodGuard | None:
     if value is None:
         return None
@@ -81,6 +114,14 @@ def prepare_versioned_method_context(value: Any) -> VersionedMethodGuard | None:
         raise VersionedMethodContextError("unreviewed method synthesis is forbidden")
     if not isinstance(profile.get("revision"), int) or profile["revision"] < 1:
         raise VersionedMethodContextError("profile.revision must be positive")
+    presentation = _require_mapping(profile.get("presentation"), "profile.presentation")
+    show_method = _require_bool(presentation.get("show_method"), "profile.presentation.show_method")
+    show_sources = _require_bool(presentation.get("show_sources"), "profile.presentation.show_sources")
+    detail_level = _require_string(
+        presentation.get("detail_level"), "profile.presentation.detail_level"
+    )
+    if detail_level not in {"simple", "standard", "professional"}:
+        raise VersionedMethodContextError("profile.presentation.detail_level is invalid")
 
     resolution = _require_mapping(context.get("resolution"), "resolution")
     resolved_ref = _method_ref(resolution.get("resolved"), "resolution.resolved")
@@ -95,6 +136,7 @@ def prepare_versioned_method_context(value: Any) -> VersionedMethodGuard | None:
         raise VersionedMethodContextError("method payload identity differs")
     if method_version.get("status") not in {"published", "deprecated"}:
         raise VersionedMethodContextError("method version is not published")
+    method_sources = _require_provenance_sources(method_version.get("provenance"))
 
     method = _require_mapping(method_version.get("method"), "method")
     expected_rule_refs = _require_unique_strings(method.get("rule_refs"), "method.rule_refs")
@@ -124,6 +166,26 @@ def prepare_versioned_method_context(value: Any) -> VersionedMethodGuard | None:
     steps = method.get("steps")
     if not isinstance(steps, list) or not steps:
         raise VersionedMethodContextError("method steps are required")
+    retrieved_sources = knowledge.get("sources", [])
+    if not isinstance(retrieved_sources, list) or any(
+        not isinstance(source, dict) for source in retrieved_sources
+    ):
+        raise VersionedMethodContextError("knowledge.sources must be objects")
+
+    presentation_instructions = [
+        "Структура ответа обязательна: «Расчётный факт», «Трактовка выбранной методики», «Персональная гипотеза», «Ограничения и следующий шаг».",
+        (
+            f"В конце укажи «Методика: {resolved_ref[0]}@{resolved_ref[1]}»."
+            if show_method
+            else "Не показывай пользователю техническое имя или версию методики."
+        ),
+        (
+            "В конце добавь «Источники» и перечисли только source_id, source_version и locator из закрытого пакета."
+            if show_sources
+            else "Не выводи пользователю список источников, но опирайся только на источники закрытого пакета."
+        ),
+        f"Уровень подробности ответа: {detail_level}.",
+    ]
 
     prompt_payload = {
         "method": {
@@ -134,6 +196,7 @@ def prepare_versioned_method_context(value: Any) -> VersionedMethodGuard | None:
             "rules": rules,
             "author": method_version.get("author"),
             "school": method_version.get("school"),
+            "provenance_sources": method_sources,
         },
         "calculation": {
             "contract": calculation.get("calculationContract"),
@@ -141,8 +204,8 @@ def prepare_versioned_method_context(value: Any) -> VersionedMethodGuard | None:
             "facts": facts,
         },
         "retrieved_context": knowledge.get("context_text", ""),
-        "sources": knowledge.get("sources", []),
-        "presentation": profile.get("presentation", {}),
+        "retrieved_sources": retrieved_sources,
+        "presentation": presentation,
     }
     prompt = "\n".join(
         [
@@ -152,6 +215,7 @@ def prepare_versioned_method_context(value: Any) -> VersionedMethodGuard | None:
             "Не вызывай MCP/RAG для расширения астрологических знаний и не смешивай другие школы или общие трактовки модели.",
             "В ответе ясно разделяй: расчётный факт, интерпретацию выбранной методики и персональную гипотезу.",
             "Не додумывай отсутствующий факт. Назови ограничение и заверши спокойным проверяемым вопросом или следующим шагом.",
+            *presentation_instructions,
             "Закрытый пакет:",
             json.dumps(prompt_payload, ensure_ascii=False, sort_keys=True),
         ]
