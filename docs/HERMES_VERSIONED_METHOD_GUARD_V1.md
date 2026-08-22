@@ -16,6 +16,8 @@ before any provider dispatch. It rejects:
   visibility;
 - unreviewed synthesis, streaming without an evidence receipt, or a reading
   request ID different from `Idempotency-Key`.
+- `X-Hermes-Session-Id` or `X-Hermes-Session-Key`, because an exact-method
+  reading cannot opt into a shared transcript or long-term memory scope.
 
 The guard injects a closed system layer requiring Hermes to distinguish
 calculation facts, method interpretation and personal hypotheses. It forbids
@@ -26,10 +28,25 @@ interpretation, personal hypothesis, and limitations/next step. Cabinet's
 prompt instructions. Method provenance remains in the package and therefore
 in Cabinet evidence even when the user elects not to display sources.
 
+Each accepted reading runs in `strict_v1` context isolation. Hermes discards
+caller-supplied system messages and assistant history, retains only the current
+user question, and creates the agent with no session database, no persistent
+memory, no context files, no built-in/MCP tools and a single model iteration.
+All plugin lifecycle hooks and request middleware are suppressed for the
+strict scope, and any configured external context engine is replaced by the
+built-in compressor. Plugins therefore cannot inject, transform, persist or
+export exact-reading content.
+The deterministic `tp-reading-<request_id>` identifier is an audit label only;
+it is never used to load or save shared history. This boundary prevents one
+user/profile from appearing in another user's exact-method answer.
+
 On a successful non-streaming response the gateway adds
 `tp_method_execution` with exact family, version, content hash, retrieval trace,
 mixing policy and prompt-contract version. Cabinet must match this receipt
-before completing the turn. The receipt is deterministic on a durable replay.
+before completing the turn. It also records `context_isolation=strict_v1`,
+`shared_memory_used=false` and `external_tools_used=false`; the HTTP response
+adds `X-Hermes-Context-Isolation: strict-v1`. The receipt is deterministic on
+a durable replay.
 
 The implementation is copied to `/opt/hermes/agent/versioned_methods.py` and
 patched into the digest-pinned v0.16.0 API server. Any upstream source drift

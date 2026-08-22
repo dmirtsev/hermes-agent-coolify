@@ -9,24 +9,47 @@ from __future__ import annotations
 
 import json
 import re
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Iterator
 
 
 SHA256_RE = re.compile(r"^[a-f0-9]{64}$")
 SEMVER_RE = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$")
 PROMPT_CONTRACT_VERSION = "1.0.0"
 MAX_CONTEXT_BYTES = 180_000
+_STRICT_CONTEXT_ACTIVE: ContextVar[bool] = ContextVar(
+    "tp_versioned_method_strict_context", default=False
+)
 
 
 class VersionedMethodContextError(ValueError):
     pass
 
 
+def strict_context_active() -> bool:
+    return _STRICT_CONTEXT_ACTIVE.get()
+
+
+@contextmanager
+def strict_context_scope(enabled: bool) -> Iterator[None]:
+    token = _STRICT_CONTEXT_ACTIVE.set(bool(enabled))
+    try:
+        yield
+    finally:
+        _STRICT_CONTEXT_ACTIVE.reset(token)
+
+
 @dataclass(frozen=True)
 class VersionedMethodGuard:
     prompt: str
     receipt: dict[str, Any]
+
+    @property
+    def isolated_session_id(self) -> str:
+        """Deterministic audit identity that is never backed by shared history."""
+        return f"tp-reading-{self.receipt['request_id']}"
 
 
 def _require_mapping(value: Any, label: str) -> dict[str, Any]:
@@ -231,5 +254,8 @@ def prepare_versioned_method_context(value: Any) -> VersionedMethodGuard | None:
             "retrieval_trace_id": retrieval_trace_id,
             "prompt_contract_version": PROMPT_CONTRACT_VERSION,
             "mixing_policy": mixing_policy,
+            "context_isolation": "strict_v1",
+            "shared_memory_used": False,
+            "external_tools_used": False,
         },
     )
