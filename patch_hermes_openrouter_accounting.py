@@ -530,10 +530,84 @@ from agent.durable_accounting import (
     seal_not_dispatched as durable_seal_not_dispatched,
 )
 from agent.design_completion import handle_design_completion
+from agent.versioned_methods import (
+    VersionedMethodContextError,
+    prepare_versioned_method_context,
+)
 
 logger = logging.getLogger(__name__)
 """,
     "API server accounting import",
+)
+
+replace_once(
+    API_SERVER,
+    '''        try:
+            body = await request.json()
+        except (json.JSONDecodeError, Exception):
+            return web.json_response(_openai_error("Invalid JSON in request body"), status=400)
+
+        messages = body.get("messages")
+''',
+    '''        try:
+            body = await request.json()
+        except (json.JSONDecodeError, Exception):
+            return web.json_response(_openai_error("Invalid JSON in request body"), status=400)
+
+        try:
+            versioned_method_guard = prepare_versioned_method_context(
+                body.get("tp_reading_context") if isinstance(body, dict) else None
+            )
+        except VersionedMethodContextError as exc:
+            return web.json_response(
+                _openai_error(str(exc), code="invalid_tp_reading_context"),
+                status=400,
+            )
+
+        messages = body.get("messages")
+''',
+    "versioned method request guard",
+)
+
+replace_once(
+    API_SERVER,
+    '''        stream = _coerce_request_bool(body.get("stream"), default=False)
+
+        # Extract system message (becomes ephemeral system prompt layered ON TOP of core)
+''',
+    '''        stream = _coerce_request_bool(body.get("stream"), default=False)
+        if stream and versioned_method_guard is not None:
+            return web.json_response(
+                _openai_error(
+                    "Versioned astrology readings require a non-streaming evidence receipt",
+                    code="tp_reading_stream_unsupported",
+                ),
+                status=400,
+            )
+
+        # Extract system message (becomes ephemeral system prompt layered ON TOP of core)
+''',
+    "versioned method non-streaming boundary",
+)
+
+replace_once(
+    API_SERVER,
+    '''                conversation_messages.append({"role": role, "content": content})
+
+        # Extract the last user message as the primary input
+''',
+    '''                conversation_messages.append({"role": role, "content": content})
+
+        if versioned_method_guard is not None:
+            system_prompt = "\\n\\n".join(
+                value
+                for value in (system_prompt, versioned_method_guard.prompt)
+                if value
+            )
+
+        # Extract the last user message as the primary input
+''',
+    "versioned method prompt injection",
 )
 
 replace_once(
@@ -756,6 +830,30 @@ replace_once(
 
 replace_once(
     API_SERVER,
+    '''        idempotency_key = request.headers.get("Idempotency-Key")
+        payload_sha256 = None
+        durable_replayed = False
+''',
+    '''        idempotency_key = request.headers.get("Idempotency-Key")
+        if (
+            versioned_method_guard is not None
+            and versioned_method_guard.receipt["request_id"] != idempotency_key
+        ):
+            return web.json_response(
+                _openai_error(
+                    "Reading request identity differs from Idempotency-Key",
+                    code="tp_reading_request_identity_mismatch",
+                ),
+                status=409,
+            )
+        payload_sha256 = None
+        durable_replayed = False
+''',
+    "versioned method request identity",
+)
+
+replace_once(
+    API_SERVER,
     '''        if gateway_session_key:
             response_headers["X-Hermes-Session-Key"] = gateway_session_key
 
@@ -890,6 +988,20 @@ replace_once(
             response_data["hermes"] = {
 """,
     "successful accounting response",
+)
+
+replace_once(
+    API_SERVER,
+    '''        if is_partial or is_failed or not completed:
+            response_data["hermes"] = {
+''',
+    '''        if versioned_method_guard is not None:
+            response_data["tp_method_execution"] = versioned_method_guard.receipt
+
+        if is_partial or is_failed or not completed:
+            response_data["hermes"] = {
+''',
+    "versioned method execution receipt",
 )
 
 replace_once(
