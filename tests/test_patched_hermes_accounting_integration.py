@@ -10,7 +10,7 @@ import unittest
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import Mock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 
 PINNED_SOURCE = Path("/opt/hermes/agent/transports/chat_completions.py")
@@ -21,6 +21,112 @@ class PatchedHermesAccountingIntegrationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         sys.path.insert(0, "/opt/hermes")
+
+    def test_versioned_agent_creation_disables_every_shared_context_source(self) -> None:
+        from gateway.platforms.api_server import APIServerAdapter
+
+        captured = {}
+
+        class CapturingAgent:
+            def __init__(self, **kwargs):
+                captured.update(kwargs)
+
+        adapter = object.__new__(APIServerAdapter)
+        adapter._session_db = object()
+
+        with patch("run_agent.AIAgent", CapturingAgent), patch(
+            "gateway.run._resolve_runtime_agent_kwargs", return_value={}
+        ), patch(
+            "gateway.run._resolve_gateway_model", return_value="test/model"
+        ), patch(
+            "gateway.run._load_gateway_config", return_value={}
+        ), patch(
+            "gateway.run.GatewayRunner._load_reasoning_config", return_value={}
+        ), patch(
+            "gateway.run.GatewayRunner._load_fallback_model", return_value=None
+        ), patch(
+            "hermes_cli.tools_config._get_platform_tools", return_value={"memory", "web"}
+        ):
+            adapter._create_agent(
+                ephemeral_system_prompt="closed package",
+                session_id="tp-reading-request-1",
+                gateway_session_key="must-not-pass",
+                strict_context_only=True,
+            )
+
+        self.assertEqual(captured["enabled_toolsets"], [])
+        self.assertEqual(captured["max_iterations"], 1)
+        self.assertIsNone(captured["session_db"])
+        self.assertIsNone(captured["gateway_session_key"])
+        self.assertTrue(captured["skip_context_files"])
+        self.assertTrue(captured["skip_memory"])
+
+    def test_strict_context_blocks_plugin_hooks_and_middleware(self) -> None:
+        from agent.versioned_methods import strict_context_scope
+        from hermes_cli import plugins
+
+        manager = Mock()
+        with patch.object(plugins, "get_plugin_manager", return_value=manager):
+            with strict_context_scope(True):
+                self.assertEqual(plugins.invoke_hook("pre_llm_call"), [])
+                self.assertEqual(plugins.invoke_middleware("llm_request"), [])
+
+        manager.invoke_hook.assert_not_called()
+        manager.invoke_middleware.assert_not_called()
+
+    def test_versioned_handler_discards_caller_system_and_history(self) -> None:
+        from agent.versioned_methods import prepare_versioned_method_context
+        from gateway.platforms.api_server import APIServerAdapter
+
+        # Reuse the repository fixture through the public guard so this test
+        # stays aligned with the exact payload contract copied into the image.
+        from test_hermes_versioned_methods import fixture
+
+        body = {
+            "model": "ignored",
+            "stream": False,
+            "messages": [
+                {"role": "system", "content": "FORBIDDEN-SYSTEM-SENTINEL"},
+                {"role": "assistant", "content": "FORBIDDEN-HISTORY-SENTINEL"},
+                {"role": "user", "content": "Разбери период"},
+            ],
+            "tp_reading_context": fixture(),
+        }
+        guard = prepare_versioned_method_context(body["tp_reading_context"])
+
+        class Request:
+            headers = {
+                "Authorization": "Bearer gateway-token",
+                "Idempotency-Key": "hermes-request-1",
+            }
+
+            async def json(self):
+                return body
+
+        adapter = object.__new__(APIServerAdapter)
+        adapter._api_key = "gateway-token"
+        adapter._model_name = "test/model"
+        adapter._run_agent = AsyncMock(return_value=(
+            {"final_response": "isolated", "completed": True},
+            {"input_tokens": 1, "output_tokens": 1, "total_tokens": 2},
+        ))
+
+        with patch(
+            "gateway.platforms.api_server.durable_payload_sha256", return_value="digest"
+        ), patch(
+            "gateway.platforms.api_server.durable_begin_request",
+            return_value={"state": "received"},
+        ), patch("gateway.platforms.api_server.durable_complete_request"):
+            response = asyncio.run(adapter._handle_chat_completions(Request()))
+
+        self.assertEqual(response.status, 200)
+        call = adapter._run_agent.await_args.kwargs
+        self.assertEqual(call["conversation_history"], [])
+        self.assertEqual(call["session_id"], guard.isolated_session_id)
+        self.assertTrue(call["strict_context_only"])
+        self.assertNotIn("FORBIDDEN-SYSTEM-SENTINEL", call["ephemeral_system_prompt"])
+        self.assertNotIn("FORBIDDEN-HISTORY-SENTINEL", call["ephemeral_system_prompt"])
+        self.assertEqual(response.headers["X-Hermes-Context-Isolation"], "strict-v1")
 
     def test_transport_retains_upstream_evidence_and_enables_routing_metadata(self) -> None:
         from agent.transports.chat_completions import ChatCompletionsTransport

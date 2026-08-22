@@ -5,6 +5,8 @@ import unittest
 from hermes_versioned_methods import (
     VersionedMethodContextError,
     prepare_versioned_method_context,
+    strict_context_active,
+    strict_context_scope,
 )
 
 
@@ -73,10 +75,20 @@ def fixture(family_id="tp.transit.period_guidance"):
 
 
 class VersionedMethodGuardTests(unittest.TestCase):
+    def test_strict_context_scope_is_local_and_resets(self):
+        self.assertFalse(strict_context_active())
+        with strict_context_scope(True):
+            self.assertTrue(strict_context_active())
+        self.assertFalse(strict_context_active())
+
     def test_builds_exact_receipt_and_closed_prompt(self):
         guard = prepare_versioned_method_context(fixture())
         self.assertEqual(guard.receipt["family_id"], "tp.transit.period_guidance")
         self.assertEqual(guard.receipt["retrieval_trace_id"], "trace-1")
+        self.assertEqual(guard.isolated_session_id, "tp-reading-hermes-request-1")
+        self.assertEqual(guard.receipt["context_isolation"], "strict_v1")
+        self.assertFalse(guard.receipt["shared_memory_used"])
+        self.assertFalse(guard.receipt["external_tools_used"])
         self.assertIn("Не вызывай MCP/RAG", guard.prompt)
         self.assertIn("Only this rule", guard.prompt)
         self.assertIn("Методика: tp.transit.period_guidance@1.0.0", guard.prompt)
