@@ -39,6 +39,8 @@ export exact-reading content.
 The deterministic `tp-reading-<request_id>` identifier is an audit label only;
 it is never used to load or save shared history. This boundary prevents one
 user/profile from appearing in another user's exact-method answer.
+This behavior is prompt contract `1.1.0`; consumers must reject the earlier
+`1.0.0` receipt because it did not prove the strict execution boundary.
 
 On a successful non-streaming response the gateway adds
 `tp_method_execution` with exact family, version, content hash, retrieval trace,

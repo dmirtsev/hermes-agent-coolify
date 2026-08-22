@@ -87,6 +87,7 @@ class VersionedMethodGuardTests(unittest.TestCase):
         self.assertEqual(guard.receipt["retrieval_trace_id"], "trace-1")
         self.assertEqual(guard.isolated_session_id, "tp-reading-hermes-request-1")
         self.assertEqual(guard.receipt["context_isolation"], "strict_v1")
+        self.assertEqual(guard.receipt["prompt_contract_version"], "1.1.0")
         self.assertFalse(guard.receipt["shared_memory_used"])
         self.assertFalse(guard.receipt["external_tools_used"])
         self.assertIn("Не вызывай MCP/RAG", guard.prompt)
