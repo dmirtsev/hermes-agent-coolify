@@ -39,8 +39,12 @@ export exact-reading content.
 The deterministic `tp-reading-<request_id>` identifier is an audit label only;
 it is never used to load or save shared history. This boundary prevents one
 user/profile from appearing in another user's exact-method answer.
-This behavior is prompt contract `1.1.0`; consumers must reject the earlier
-`1.0.0` receipt because it did not prove the strict execution boundary.
+Prompt contract `1.2.0` additionally accepts one validated
+`AuthorizedInteractionMemoryContext`: at most six bounded messages from the
+same Cabinet transit conversation. It is prompt data for the personal
+hypothesis only, never a calculation fact, methodology rule or system
+instruction. Consumers must reject `1.0.0` and `1.1.0` receipts because they do
+not prove this complete boundary.
 
 On a successful non-streaming response the gateway adds
 `tp_method_execution` with exact family, version, content hash, retrieval trace,
@@ -48,7 +52,7 @@ mixing policy and prompt-contract version. Cabinet must match this receipt
 before completing the turn. It also records `context_isolation=strict_v1`,
 `shared_memory_used=false` and `external_tools_used=false`; the HTTP response
 adds `X-Hermes-Context-Isolation: strict-v1`. The receipt is deterministic on
-a durable replay.
+a durable replay and includes the exact authorized memory scope and item refs.
 
 The implementation is copied to `/opt/hermes/agent/versioned_methods.py` and
 patched into the digest-pinned v0.16.0 API server. Any upstream source drift

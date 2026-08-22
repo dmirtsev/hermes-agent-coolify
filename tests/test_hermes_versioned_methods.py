@@ -23,6 +23,7 @@ def fixture(family_id="tp.transit.period_guidance"):
     return {
         "schema_version": 1,
         "request_id": "hermes-request-1",
+        "conversation_id": "conversation-1",
         "domain": "transit",
         "task_type": "period_guidance",
         "profile": {
@@ -71,6 +72,20 @@ def fixture(family_id="tp.transit.period_guidance"):
             "sources": [],
             "context_text": "Scoped context",
         },
+        "memory_context": {
+            "schema_version": 1,
+            "scope": "conversation.transit",
+            "conversation_id": "conversation-1",
+            "selection_policy": "recent_non_mock_same_context",
+            "items": [
+                {
+                    "memory_item_ref": "message-1",
+                    "role": "user",
+                    "content": "Хочу продолжить наблюдение этой темы.",
+                    "created_at": "2026-08-20T10:00:00Z",
+                }
+            ],
+        },
     }
 
 
@@ -87,13 +102,33 @@ class VersionedMethodGuardTests(unittest.TestCase):
         self.assertEqual(guard.receipt["retrieval_trace_id"], "trace-1")
         self.assertEqual(guard.isolated_session_id, "tp-reading-hermes-request-1")
         self.assertEqual(guard.receipt["context_isolation"], "strict_v1")
-        self.assertEqual(guard.receipt["prompt_contract_version"], "1.1.0")
+        self.assertEqual(guard.receipt["prompt_contract_version"], "1.2.0")
         self.assertFalse(guard.receipt["shared_memory_used"])
         self.assertFalse(guard.receipt["external_tools_used"])
+        self.assertEqual(
+            guard.receipt["authorized_memory_item_refs"], ["message-1"]
+        )
         self.assertIn("Не вызывай MCP/RAG", guard.prompt)
         self.assertIn("Only this rule", guard.prompt)
         self.assertIn("Методика: tp.transit.period_guidance@1.0.0", guard.prompt)
         self.assertIn("source_id", guard.prompt)
+        self.assertIn("authorized_interaction_memory", guard.prompt)
+
+    def test_rejects_memory_outside_the_bounded_conversation_scope(self):
+        value = fixture()
+        value["memory_context"]["scope"] = "conversation.other"
+        with self.assertRaisesRegex(VersionedMethodContextError, "scope"):
+            prepare_versioned_method_context(value)
+
+        value = fixture()
+        value["memory_context"]["items"] = value["memory_context"]["items"] * 7
+        with self.assertRaisesRegex(VersionedMethodContextError, "item limit"):
+            prepare_versioned_method_context(value)
+
+        value = fixture()
+        value["memory_context"]["conversation_id"] = "conversation-2"
+        with self.assertRaisesRegex(VersionedMethodContextError, "differs"):
+            prepare_versioned_method_context(value)
 
     def test_presentation_switches_are_enforced_in_closed_prompt(self):
         value = fixture()
