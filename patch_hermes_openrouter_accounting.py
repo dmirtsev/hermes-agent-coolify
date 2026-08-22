@@ -18,6 +18,8 @@ LOOP = ROOT / "agent/conversation_loop.py"
 STREAM_HELPERS = ROOT / "agent/chat_completion_helpers.py"
 AUXILIARY = ROOT / "agent/auxiliary_client.py"
 API_SERVER = ROOT / "gateway/platforms/api_server.py"
+AGENT_INIT = ROOT / "agent/agent_init.py"
+PLUGINS = ROOT / "hermes_cli/plugins.py"
 
 
 def replace_once(path: Path, old: str, new: str, name: str) -> None:
@@ -28,12 +30,83 @@ def replace_once(path: Path, old: str, new: str, name: str) -> None:
     path.write_text(source.replace(old, new, 1), encoding="utf-8")
 
 
-for required in (TRANSPORT, LOOP, STREAM_HELPERS, AUXILIARY, API_SERVER):
+for required in (TRANSPORT, LOOP, STREAM_HELPERS, AUXILIARY, API_SERVER, AGENT_INIT, PLUGINS):
     if not required.is_file():
         raise SystemExit(f"required pinned Hermes source is missing: {required}")
 
 if "hermes_openrouter_accounting" in API_SERVER.read_text(encoding="utf-8"):
     raise SystemExit("OpenRouter accounting patch is already present")
+
+replace_once(
+    AGENT_INIT,
+    '''    try:
+        _ctx_cfg = _agent_cfg.get("context", {}) if isinstance(_agent_cfg, dict) else {}
+        _engine_name = _ctx_cfg.get("engine", "compressor") or "compressor"
+    except Exception:
+        pass
+
+    if _engine_name != "compressor":
+''',
+    '''    try:
+        _ctx_cfg = _agent_cfg.get("context", {}) if isinstance(_agent_cfg, dict) else {}
+        _engine_name = _ctx_cfg.get("engine", "compressor") or "compressor"
+    except Exception:
+        pass
+    try:
+        from agent.versioned_methods import strict_context_active
+        if strict_context_active():
+            _engine_name = "compressor"
+    except Exception:
+        pass
+
+    if _engine_name != "compressor":
+''',
+    "strict context engine isolation",
+)
+
+replace_once(
+    PLUGINS,
+    '''def invoke_hook(hook_name: str, **kwargs: Any) -> List[Any]:
+    """Invoke a lifecycle hook on all loaded plugins.
+
+    Returns a list of non-``None`` return values from plugin callbacks.
+    """
+    return get_plugin_manager().invoke_hook(hook_name, **kwargs)
+''',
+    '''def invoke_hook(hook_name: str, **kwargs: Any) -> List[Any]:
+    """Invoke a lifecycle hook on all loaded plugins."""
+    try:
+        from agent.versioned_methods import strict_context_active
+        if strict_context_active():
+            return []
+    except Exception:
+        pass
+    return get_plugin_manager().invoke_hook(hook_name, **kwargs)
+''',
+    "strict context plugin hook isolation",
+)
+
+replace_once(
+    PLUGINS,
+    '''def invoke_middleware(kind: str, **kwargs: Any) -> List[Any]:
+    """Invoke registered middleware callbacks.
+
+    Returns a list of non-``None`` return values from middleware callbacks.
+    """
+    return get_plugin_manager().invoke_middleware(kind, **kwargs)
+''',
+    '''def invoke_middleware(kind: str, **kwargs: Any) -> List[Any]:
+    """Invoke registered middleware callbacks."""
+    try:
+        from agent.versioned_methods import strict_context_active
+        if strict_context_active():
+            return []
+    except Exception:
+        pass
+    return get_plugin_manager().invoke_middleware(kind, **kwargs)
+''',
+    "strict context plugin middleware isolation",
+)
 
 
 replace_once(
@@ -529,10 +602,189 @@ from agent.durable_accounting import (
     request_payload_sha256 as durable_payload_sha256,
     seal_not_dispatched as durable_seal_not_dispatched,
 )
+from agent.versioned_methods import (
+    VersionedMethodContextError,
+    prepare_versioned_method_context,
+    strict_context_scope,
+)
 
 logger = logging.getLogger(__name__)
 """,
     "API server accounting import",
+)
+
+replace_once(
+    API_SERVER,
+    '''        gateway_session_key: Optional[str] = None,
+    ) -> Any:
+''',
+    '''        gateway_session_key: Optional[str] = None,
+        strict_context_only: bool = False,
+    ) -> Any:
+''',
+    "strict context agent creation argument",
+)
+
+replace_once(
+    API_SERVER,
+    '''        enabled_toolsets = sorted(_get_platform_tools(user_config, "api_server"))
+
+        max_iterations = int(os.getenv("HERMES_MAX_ITERATIONS", "90"))
+''',
+    '''        enabled_toolsets = sorted(_get_platform_tools(user_config, "api_server"))
+
+        max_iterations = int(os.getenv("HERMES_MAX_ITERATIONS", "90"))
+        if strict_context_only:
+            # Exact-method readings execute without built-in or MCP tools.
+            enabled_toolsets = []
+            max_iterations = 1
+''',
+    "strict context tool isolation",
+)
+
+replace_once(
+    API_SERVER,
+    '''            session_db=self._ensure_session_db(),
+            fallback_model=fallback_model,
+            reasoning_config=reasoning_config,
+            gateway_session_key=gateway_session_key,
+''',
+    '''            session_db=None if strict_context_only else self._ensure_session_db(),
+            fallback_model=fallback_model,
+            reasoning_config=reasoning_config,
+            gateway_session_key=None if strict_context_only else gateway_session_key,
+            skip_context_files=strict_context_only,
+            skip_memory=strict_context_only,
+''',
+    "strict context memory isolation",
+)
+
+replace_once(
+    API_SERVER,
+    '''        try:
+            body = await request.json()
+        except (json.JSONDecodeError, Exception):
+            return web.json_response(_openai_error("Invalid JSON in request body"), status=400)
+
+        messages = body.get("messages")
+''',
+    '''        try:
+            body = await request.json()
+        except (json.JSONDecodeError, Exception):
+            return web.json_response(_openai_error("Invalid JSON in request body"), status=400)
+
+        try:
+            versioned_method_guard = prepare_versioned_method_context(
+                body.get("tp_reading_context") if isinstance(body, dict) else None
+            )
+        except VersionedMethodContextError as exc:
+            return web.json_response(
+                _openai_error(str(exc), code="invalid_tp_reading_context"),
+                status=400,
+            )
+
+        messages = body.get("messages")
+''',
+    "versioned method request guard",
+)
+
+replace_once(
+    API_SERVER,
+    '''        stream = _coerce_request_bool(body.get("stream"), default=False)
+
+        # Extract system message (becomes ephemeral system prompt layered ON TOP of core)
+''',
+    '''        stream = _coerce_request_bool(body.get("stream"), default=False)
+        if stream and versioned_method_guard is not None:
+            return web.json_response(
+                _openai_error(
+                    "Versioned astrology readings require a non-streaming evidence receipt",
+                    code="tp_reading_stream_unsupported",
+                ),
+                status=400,
+            )
+
+        # Extract system message (becomes ephemeral system prompt layered ON TOP of core)
+''',
+    "versioned method non-streaming boundary",
+)
+
+replace_once(
+    API_SERVER,
+    '''                conversation_messages.append({"role": role, "content": content})
+
+        # Extract the last user message as the primary input
+''',
+    '''                conversation_messages.append({"role": role, "content": content})
+
+        if versioned_method_guard is not None:
+            # Caller system/history content is not an authorized knowledge
+            # source for an exact-method execution.
+            system_prompt = versioned_method_guard.prompt
+
+        # Extract the last user message as the primary input
+''',
+    "versioned method prompt injection",
+)
+
+replace_once(
+    API_SERVER,
+    '''        if conversation_messages:
+            user_message = conversation_messages[-1].get("content", "")
+            history = conversation_messages[:-1]
+
+        if not _content_has_visible_payload(user_message):
+''',
+    '''        if conversation_messages:
+            user_message = conversation_messages[-1].get("content", "")
+            history = conversation_messages[:-1]
+        if versioned_method_guard is not None:
+            history = []
+
+        if not _content_has_visible_payload(user_message):
+''',
+    "strict context request history isolation",
+)
+
+replace_once(
+    API_SERVER,
+    '''        gateway_session_key, key_err = self._parse_session_key_header(request)
+        if key_err is not None:
+            return key_err
+
+        # Allow caller to continue an existing session by passing X-Hermes-Session-Id.
+''',
+    '''        gateway_session_key, key_err = self._parse_session_key_header(request)
+        if key_err is not None:
+            return key_err
+
+        if versioned_method_guard is not None and (
+            gateway_session_key or request.headers.get("X-Hermes-Session-Id", "").strip()
+        ):
+            return web.json_response(
+                _openai_error(
+                    "Versioned astrology readings forbid shared session and memory headers",
+                    code="tp_reading_shared_context_forbidden",
+                ),
+                status=400,
+            )
+
+        # Allow caller to continue an existing session by passing X-Hermes-Session-Id.
+''',
+    "strict context session header rejection",
+)
+
+replace_once(
+    API_SERVER,
+    '''        provided_session_id = request.headers.get("X-Hermes-Session-Id", "").strip()
+        if provided_session_id:
+''',
+    '''        provided_session_id = request.headers.get("X-Hermes-Session-Id", "").strip()
+        if versioned_method_guard is not None:
+            session_id = versioned_method_guard.isolated_session_id
+        elif provided_session_id:
+''',
+    "strict context isolated session identity",
 )
 
 replace_once(
@@ -666,6 +918,7 @@ replace_once(
                 session_id=session_id,
                 gateway_session_key=gateway_session_key,
                 accounting_request_key=idempotency_key,
+                strict_context_only=versioned_method_guard is not None,
             )
 
         if idempotency_key:
@@ -743,6 +996,30 @@ replace_once(
 
 replace_once(
     API_SERVER,
+    '''        idempotency_key = request.headers.get("Idempotency-Key")
+        payload_sha256 = None
+        durable_replayed = False
+''',
+    '''        idempotency_key = request.headers.get("Idempotency-Key")
+        if (
+            versioned_method_guard is not None
+            and versioned_method_guard.receipt["request_id"] != idempotency_key
+        ):
+            return web.json_response(
+                _openai_error(
+                    "Reading request identity differs from Idempotency-Key",
+                    code="tp_reading_request_identity_mismatch",
+                ),
+                status=409,
+            )
+        payload_sha256 = None
+        durable_replayed = False
+''',
+    "versioned method request identity",
+)
+
+replace_once(
+    API_SERVER,
     '''        if gateway_session_key:
             response_headers["X-Hermes-Session-Key"] = gateway_session_key
 
@@ -752,6 +1029,8 @@ replace_once(
             response_headers["X-Hermes-Session-Key"] = gateway_session_key
         if durable_replayed:
             response_headers["X-Hermes-Idempotency-Replayed"] = "true"
+        if versioned_method_guard is not None:
+            response_headers["X-Hermes-Context-Isolation"] = "strict-v1"
 
         # Hard-fail path: no usable assistant text AND a real failure → 5xx
 ''',
@@ -765,9 +1044,39 @@ replace_once(
 ''',
     '''        gateway_session_key: Optional[str] = None,
         accounting_request_key: Optional[str] = None,
+        strict_context_only: bool = False,
     ) -> tuple:
 ''',
     "durable request key execution argument",
+)
+
+replace_once(
+    API_SERVER,
+    '''            agent = self._create_agent(
+                ephemeral_system_prompt=ephemeral_system_prompt,
+                session_id=session_id,
+                stream_delta_callback=stream_delta_callback,
+                tool_progress_callback=tool_progress_callback,
+                tool_start_callback=tool_start_callback,
+                tool_complete_callback=tool_complete_callback,
+                gateway_session_key=gateway_session_key,
+            )
+            if agent_ref is not None:
+''',
+    '''            with strict_context_scope(strict_context_only):
+                agent = self._create_agent(
+                    ephemeral_system_prompt=ephemeral_system_prompt,
+                    session_id=session_id,
+                    stream_delta_callback=stream_delta_callback,
+                    tool_progress_callback=tool_progress_callback,
+                    tool_start_callback=tool_start_callback,
+                    tool_complete_callback=tool_complete_callback,
+                    gateway_session_key=gateway_session_key,
+                    strict_context_only=strict_context_only,
+                )
+            if agent_ref is not None:
+''',
+    "strict context agent execution boundary",
 )
 
 replace_once(
@@ -800,7 +1109,7 @@ replace_once(
             )
             usage = {
 """,
-    """            with durable_agent_request_scope(agent, accounting_request_key), openrouter_accounting_scope(agent):
+    """            with strict_context_scope(strict_context_only), durable_agent_request_scope(agent, accounting_request_key), openrouter_accounting_scope(agent):
                 result = agent.run_conversation(
                     user_message=user_message,
                     conversation_history=conversation_history,
@@ -876,6 +1185,20 @@ replace_once(
             response_data["hermes"] = {
 """,
     "successful accounting response",
+)
+
+replace_once(
+    API_SERVER,
+    '''        if is_partial or is_failed or not completed:
+            response_data["hermes"] = {
+''',
+    '''        if versioned_method_guard is not None:
+            response_data["tp_method_execution"] = versioned_method_guard.receipt
+
+        if is_partial or is_failed or not completed:
+            response_data["hermes"] = {
+''',
+    "versioned method execution receipt",
 )
 
 replace_once(
