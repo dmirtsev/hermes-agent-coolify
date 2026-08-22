@@ -26,7 +26,11 @@ def fixture(family_id="tp.transit.period_guidance"):
         "profile": {
             "revision": 2,
             "mixing_policy": "forbidden",
-            "presentation": {"show_method": True, "show_sources": True},
+            "presentation": {
+                "detail_level": "standard",
+                "show_method": True,
+                "show_sources": True,
+            },
         },
         "resolution": {"resolved": method_ref},
         "calculation": {
@@ -43,6 +47,16 @@ def fixture(family_id="tp.transit.period_guidance"):
                 "status": "published",
                 "author": {"id": "tp.editorial"},
                 "school": None,
+                "provenance": {
+                    "sources": [
+                        {
+                            "source_id": "tp.transit.editorial_core",
+                            "source_version": "2026.08",
+                            "locator": "rules/versioned-transit-mvp",
+                            "rights_status": "owned",
+                        }
+                    ]
+                },
                 "method": {
                     "steps": [{"id": "read", "position": 1, "instruction": "Read"}],
                     "rule_refs": ["rule-1"],
@@ -65,6 +79,25 @@ class VersionedMethodGuardTests(unittest.TestCase):
         self.assertEqual(guard.receipt["retrieval_trace_id"], "trace-1")
         self.assertIn("Не вызывай MCP/RAG", guard.prompt)
         self.assertIn("Only this rule", guard.prompt)
+        self.assertIn("Методика: tp.transit.period_guidance@1.0.0", guard.prompt)
+        self.assertIn("source_id", guard.prompt)
+
+    def test_presentation_switches_are_enforced_in_closed_prompt(self):
+        value = fixture()
+        value["profile"]["presentation"]["show_method"] = False
+        value["profile"]["presentation"]["show_sources"] = False
+        guard = prepare_versioned_method_context(value)
+        self.assertIn("Не показывай пользователю техническое имя", guard.prompt)
+        self.assertIn("Не выводи пользователю список источников", guard.prompt)
+
+    def test_rejects_published_method_without_source_provenance(self):
+        value = fixture()
+        value["knowledge"]["method_version"]["provenance"] = {"sources": []}
+        with self.assertRaisesRegex(
+            VersionedMethodContextError,
+            "published method provenance sources are required",
+        ):
+            prepare_versioned_method_context(value)
 
     def test_rejects_cross_method_retrieval(self):
         value = fixture()

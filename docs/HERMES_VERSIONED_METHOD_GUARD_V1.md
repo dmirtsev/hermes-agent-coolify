@@ -11,12 +11,20 @@ before any provider dispatch. It rejects:
 - rules or knowledge-base collections outside the exact published method;
 - duplicate references, more than 48 calculation facts or an oversized
   context;
+- a published method without a non-empty, rights-labelled provenance source;
+- malformed presentation controls for detail, method attribution or source
+  visibility;
 - unreviewed synthesis, streaming without an evidence receipt, or a reading
   request ID different from `Idempotency-Key`.
 
 The guard injects a closed system layer requiring Hermes to distinguish
 calculation facts, method interpretation and personal hypotheses. It forbids
 using MCP/RAG or general model knowledge to expand the astrology package.
+The answer receives four explicit sections: calculation fact, selected-method
+interpretation, personal hypothesis, and limitations/next step. Cabinet's
+`show_method` and `show_sources` choices are converted into explicit closed
+prompt instructions. Method provenance remains in the package and therefore
+in Cabinet evidence even when the user elects not to display sources.
 
 On a successful non-streaming response the gateway adds
 `tp_method_execution` with exact family, version, content hash, retrieval trace,
