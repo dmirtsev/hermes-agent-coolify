@@ -17,7 +17,7 @@ from typing import Any, Iterator
 
 SHA256_RE = re.compile(r"^[a-f0-9]{64}$")
 SEMVER_RE = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$")
-PROMPT_CONTRACT_VERSION = "1.0.0"
+PROMPT_CONTRACT_VERSION = "1.1.0"
 MAX_CONTEXT_BYTES = 180_000
 _STRICT_CONTEXT_ACTIVE: ContextVar[bool] = ContextVar(
     "tp_versioned_method_strict_context", default=False
