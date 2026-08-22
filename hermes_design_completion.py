@@ -61,6 +61,29 @@ HARD_MAX_OUTPUT_TOKENS = 720
 DEFAULT_TIMEOUT_SECONDS = 45.0
 _COLOR = re.compile(r"^#[0-9a-fA-F]{6}$")
 
+_SAFE_DESIGN_DEFAULTS: dict[str, Any] = {
+    "preset": "editorial-light",
+    "canvas": "#eaf1f6",
+    "surface": "#ffffff",
+    "surfaceAlt": "#f4f7f9",
+    "ink": "#20233a",
+    "muted": "#687385",
+    "accent": "#b96950",
+    "accentContrast": "#ffffff",
+    "gold": "#c7a24a",
+    "border": "#d8e3ea",
+    "headingStyle": "editorial",
+    "radius": "soft",
+    "density": "balanced",
+    "heroLayout": "split",
+}
+
+_SAFE_BEHAVIOR_DEFAULTS: dict[str, Any] = {
+    "entrance": "soft",
+    "cardHover": "lift",
+    "stickyNavigation": False,
+}
+
 _DESIGN_SCHEMA_TEXT = (
     '{"concept":string,"design":{"preset":"editorial-light|celestial-blue|solar-warm|cosmic-night",'
     '"canvas":"#RRGGBB","surface":"#RRGGBB","surfaceAlt":"#RRGGBB","ink":"#RRGGBB",'
@@ -203,6 +226,70 @@ def validate_generated_design(value: Any) -> dict[str, Any]:
     return value
 
 
+def normalize_generated_design(value: Any) -> dict[str, Any]:
+    """Convert a usable model object into the exact public design contract.
+
+    JSON-mode providers still occasionally add harmless keys, omit a token, or
+    invent an enum spelling. The runtime, rather than the browser, owns the
+    safety boundary: valid model choices are retained and every unsupported
+    value falls back to the reviewed AstroFest baseline.
+    """
+    if not isinstance(value, dict):
+        raise DesignRequestError("Generated design is not an object", "invalid_design_output")
+
+    concept_value = value.get("concept")
+    concept = concept_value.strip()[:120] if isinstance(concept_value, str) else ""
+    if len(concept) < 3:
+        concept = "Безопасный вариант AstroFest"
+
+    source_design = value.get("design") if isinstance(value.get("design"), dict) else {}
+    design = dict(_SAFE_DESIGN_DEFAULTS)
+    enum_fields = {
+        "preset": {"editorial-light", "celestial-blue", "solar-warm", "cosmic-night"},
+        "headingStyle": {"editorial", "modern"},
+        "radius": {"crisp", "soft", "round"},
+        "density": {"compact", "balanced", "airy"},
+        "heroLayout": {"split", "centered"},
+    }
+    for field, allowed in enum_fields.items():
+        if source_design.get(field) in allowed:
+            design[field] = source_design[field]
+    for field in ("canvas", "surface", "surfaceAlt", "ink", "muted", "accent", "accentContrast", "gold", "border"):
+        candidate = source_design.get(field)
+        if isinstance(candidate, str) and _COLOR.fullmatch(candidate):
+            design[field] = candidate.lower()
+
+    source_behavior = value.get("behavior") if isinstance(value.get("behavior"), dict) else {}
+    behavior = dict(_SAFE_BEHAVIOR_DEFAULTS)
+    if source_behavior.get("entrance") in {"none", "soft", "staggered"}:
+        behavior["entrance"] = source_behavior["entrance"]
+    if source_behavior.get("cardHover") in {"none", "lift", "glow"}:
+        behavior["cardHover"] = source_behavior["cardHover"]
+    if isinstance(source_behavior.get("stickyNavigation"), bool):
+        behavior["stickyNavigation"] = source_behavior["stickyNavigation"]
+
+    rationale_value = value.get("rationale")
+    rationale = []
+    if isinstance(rationale_value, list):
+        rationale = [
+            item.strip()[:240]
+            for item in rationale_value
+            if isinstance(item, str) and len(item.strip()) >= 3
+        ][:5]
+    for fallback in ("Сохранена читаемая структура фестиваля.", "Использована безопасная контрастная палитра."):
+        if len(rationale) >= 2:
+            break
+        rationale.append(fallback)
+
+    normalized = {
+        "concept": concept,
+        "design": design,
+        "behavior": behavior,
+        "rationale": rationale,
+    }
+    return validate_generated_design(normalized)
+
+
 def _response_content(response: Any) -> str:
     choices = getattr(response, "choices", None)
     if not isinstance(choices, (list, tuple)) or not choices:
@@ -250,7 +337,7 @@ def _execute_direct(adapter: Any, body: dict[str, Any], request_key: str) -> tup
         )
         content = _response_content(response)
         try:
-            design = validate_generated_design(json.loads(content))
+            design = normalize_generated_design(json.loads(content))
         except (json.JSONDecodeError, DesignRequestError):
             tokens = accounting["tokens"] if accounting else {}
             payload = _error(

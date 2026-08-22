@@ -122,6 +122,23 @@ class HermesDesignCompletionTests(unittest.TestCase):
         with self.assertRaises(design.DesignRequestError):
             design.validate_generated_design(invalid)
 
+    def test_generated_design_is_normalized_at_the_runtime_boundary(self):
+        generated = valid_design()
+        generated["extra"] = "ignored"
+        generated["design"].pop("surfaceAlt")
+        generated["design"]["radius"] = "pill"
+        generated["behavior"]["cardHover"] = "float"
+        generated["rationale"] = ["Один довод"]
+
+        normalized = design.normalize_generated_design(generated)
+
+        self.assertEqual(set(normalized), {"concept", "design", "behavior", "rationale"})
+        self.assertEqual(normalized["design"]["surfaceAlt"], "#f4f7f9")
+        self.assertEqual(normalized["design"]["radius"], "soft")
+        self.assertEqual(normalized["behavior"]["cardHover"], "lift")
+        self.assertEqual(len(normalized["rationale"]), 2)
+        self.assertEqual(design.validate_generated_design(normalized), normalized)
+
     def test_endpoint_executes_fixed_model_once_and_replays(self):
         adapter = FakeAdapter()
         body = {
