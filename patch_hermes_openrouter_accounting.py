@@ -602,6 +602,7 @@ from agent.durable_accounting import (
     request_payload_sha256 as durable_payload_sha256,
     seal_not_dispatched as durable_seal_not_dispatched,
 )
+from agent.design_completion import handle_design_completion
 from agent.versioned_methods import (
     VersionedMethodContextError,
     prepare_versioned_method_context,
@@ -785,6 +786,18 @@ replace_once(
         elif provided_session_id:
 ''',
     "strict context isolated session identity",
+)
+
+replace_once(
+    API_SERVER,
+    '''    async def _handle_chat_completions(self, request: "web.Request") -> "web.Response":
+''',
+    '''    async def _handle_design_completions(self, request: "web.Request") -> "web.Response":
+        return await handle_design_completion(self, request, web)
+
+    async def _handle_chat_completions(self, request: "web.Request") -> "web.Response":
+''',
+    "bounded design completion handler",
 )
 
 replace_once(
@@ -1096,6 +1109,7 @@ replace_once(
                 self._handle_internal_accounting_seal_not_dispatched,
             )
             self._app.router.add_post("/v1/chat/completions", self._handle_chat_completions)
+            self._app.router.add_post("/v1/design/completions", self._handle_design_completions)
 ''',
     "durable accounting internal routes",
 )
