@@ -21,6 +21,16 @@ PROMPT_CONTRACT_VERSION = "1.2.0"
 MAX_CONTEXT_BYTES = 180_000
 MAX_MEMORY_ITEMS = 6
 MAX_MEMORY_ITEM_CHARS = 2_000
+SUPPORTED_READING_CONTRACTS = {
+    ("transit", "period_guidance"): {
+        "calculation_contract": "core.transit_bands",
+        "memory_scope": "conversation.transit",
+    },
+    ("natal", "general_reading"): {
+        "calculation_contract": "core.natal_chart",
+        "memory_scope": "conversation.natal",
+    },
+}
 _STRICT_CONTEXT_ACTIVE: ContextVar[bool] = ContextVar(
     "tp_versioned_method_strict_context", default=False
 )
@@ -117,11 +127,11 @@ def _require_provenance_sources(value: Any) -> list[dict[str, Any]]:
     return normalized
 
 
-def _require_authorized_memory(value: Any) -> dict[str, Any]:
+def _require_authorized_memory(value: Any, *, expected_scope: str) -> dict[str, Any]:
     memory = _require_mapping(value, "memory_context")
     if memory.get("schema_version") != 1:
         raise VersionedMethodContextError("unsupported memory_context schema")
-    if memory.get("scope") != "conversation.transit":
+    if memory.get("scope") != expected_scope:
         raise VersionedMethodContextError("memory_context scope is outside the reading")
     if memory.get("selection_policy") != "recent_non_mock_same_context":
         raise VersionedMethodContextError("memory_context selection policy is invalid")
@@ -155,7 +165,7 @@ def _require_authorized_memory(value: Any) -> dict[str, Any]:
         )
     return {
         "schema_version": 1,
-        "scope": "conversation.transit",
+        "scope": expected_scope,
         "conversation_id": conversation_id,
         "selection_policy": "recent_non_mock_same_context",
         "items": normalized_items,
@@ -178,7 +188,8 @@ def prepare_versioned_method_context(value: Any) -> VersionedMethodGuard | None:
     )
     domain = _require_string(context.get("domain"), "domain")
     task_type = _require_string(context.get("task_type"), "task_type")
-    if (domain, task_type) != ("transit", "period_guidance"):
+    reading_contract = SUPPORTED_READING_CONTRACTS.get((domain, task_type))
+    if reading_contract is None:
         raise VersionedMethodContextError("unsupported astrology reading domain/task")
 
     profile = _require_mapping(context.get("profile"), "profile")
@@ -226,6 +237,13 @@ def prepare_versioned_method_context(value: Any) -> VersionedMethodGuard | None:
         raise VersionedMethodContextError("retrieved knowledge bases are outside the exact method")
 
     calculation = _require_mapping(context.get("calculation"), "calculation")
+    calculation_contract = _require_string(
+        calculation.get("calculationContract"), "calculation.calculationContract"
+    )
+    if calculation_contract != reading_contract["calculation_contract"]:
+        raise VersionedMethodContextError(
+            "calculation contract does not match the astrology reading"
+        )
     fact_refs = _require_unique_strings(calculation.get("factRefs"), "calculation.factRefs")
     facts = calculation.get("facts")
     if not isinstance(facts, list) or len(facts) != len(fact_refs):
@@ -244,7 +262,10 @@ def prepare_versioned_method_context(value: Any) -> VersionedMethodGuard | None:
         not isinstance(source, dict) for source in retrieved_sources
     ):
         raise VersionedMethodContextError("knowledge.sources must be objects")
-    authorized_memory = _require_authorized_memory(context.get("memory_context"))
+    authorized_memory = _require_authorized_memory(
+        context.get("memory_context"),
+        expected_scope=reading_contract["memory_scope"],
+    )
     if authorized_memory["conversation_id"] != conversation_id:
         raise VersionedMethodContextError(
             "memory_context conversation differs from the reading conversation"
@@ -277,7 +298,7 @@ def prepare_versioned_method_context(value: Any) -> VersionedMethodGuard | None:
             "provenance_sources": method_sources,
         },
         "calculation": {
-            "contract": calculation.get("calculationContract"),
+            "contract": calculation_contract,
             "version": calculation.get("contractVersion"),
             "facts": facts,
         },

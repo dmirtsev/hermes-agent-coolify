@@ -41,10 +41,13 @@ it is never used to load or save shared history. This boundary prevents one
 user/profile from appearing in another user's exact-method answer.
 Prompt contract `1.2.0` additionally accepts one validated
 `AuthorizedInteractionMemoryContext`: at most six bounded messages from the
-same Cabinet transit conversation. It is prompt data for the personal
-hypothesis only, never a calculation fact, methodology rule or system
-instruction. Consumers must reject `1.0.0` and `1.1.0` receipts because they do
-not prove this complete boundary.
+same Cabinet reading conversation. Transit readings require
+`conversation.transit`; natal general readings require `conversation.natal`.
+The domain/task pair also pins the calculation contract (`core.transit_bands`
+or `core.natal_chart`) before model dispatch. The memory is prompt data for the
+personal hypothesis only, never a calculation fact, methodology rule or system
+instruction. Consumers must reject `1.0.0` and `1.1.0` receipts because they
+do not prove this complete boundary.
 
 On a successful non-streaming response the gateway adds
 `tp_method_execution` with exact family, version, content hash, retrieval trace,
