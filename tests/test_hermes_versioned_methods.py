@@ -14,7 +14,15 @@ def digest(value: str) -> str:
     return hashlib.sha256(value.encode()).hexdigest()
 
 
-def fixture(family_id="tp.transit.period_guidance"):
+def fixture(
+    family_id="tp.transit.period_guidance",
+    *,
+    domain="transit",
+    task_type="period_guidance",
+    calculation_contract="core.transit_bands",
+    memory_scope="conversation.transit",
+    knowledge_base_slug="tp-transit-period-guidance-v1",
+):
     method_ref = {
         "family_id": family_id,
         "version": "1.0.0",
@@ -24,8 +32,8 @@ def fixture(family_id="tp.transit.period_guidance"):
         "schema_version": 1,
         "request_id": "hermes-request-1",
         "conversation_id": "conversation-1",
-        "domain": "transit",
-        "task_type": "period_guidance",
+        "domain": domain,
+        "task_type": task_type,
         "profile": {
             "revision": 2,
             "mixing_policy": "forbidden",
@@ -37,7 +45,7 @@ def fixture(family_id="tp.transit.period_guidance"):
         },
         "resolution": {"resolved": method_ref},
         "calculation": {
-            "calculationContract": "core.transit_bands",
+            "calculationContract": calculation_contract,
             "contractVersion": "1.2.0",
             "factRefs": ["transit-band-1"],
             "facts": [{"fact_id": "transit-band-1", "aspect": "square"}],
@@ -63,18 +71,18 @@ def fixture(family_id="tp.transit.period_guidance"):
                 "method": {
                     "steps": [{"id": "read", "position": 1, "instruction": "Read"}],
                     "rule_refs": ["rule-1"],
-                    "chunk_collections": ["tp-transit-period-guidance-v1"],
+                    "chunk_collections": [knowledge_base_slug],
                     "synthesis_policy": "single_method_only",
                 },
             },
-            "knowledge_base_slugs": ["tp-transit-period-guidance-v1"],
+            "knowledge_base_slugs": [knowledge_base_slug],
             "rules": [{"stable_ref": "rule-1", "rule_text": "Only this rule"}],
             "sources": [],
             "context_text": "Scoped context",
         },
         "memory_context": {
             "schema_version": 1,
-            "scope": "conversation.transit",
+            "scope": memory_scope,
             "conversation_id": "conversation-1",
             "selection_policy": "recent_non_mock_same_context",
             "items": [
@@ -87,6 +95,40 @@ def fixture(family_id="tp.transit.period_guidance"):
             ],
         },
     }
+
+
+def natal_fixture():
+    value = fixture(
+        "author.natal.avessalom_podvodny",
+        domain="natal",
+        task_type="general_reading",
+        calculation_contract="core.natal_chart",
+        memory_scope="conversation.natal",
+        knowledge_base_slug="tp-natal-planets-avessalom-podvodny-v1",
+    )
+    value["calculation"] = {
+        "calculationContract": "core.natal_chart",
+        "contractVersion": "1.0.0",
+        "factRefs": ["natal-sun-1"],
+        "facts": [{"fact_id": "natal-sun-1", "object": "Sun", "sign": "Aries"}],
+    }
+    value["knowledge"]["method_version"]["method"]["rule_refs"] = []
+    value["knowledge"]["rules"] = []
+    value["knowledge"]["method_version"]["author"] = {
+        "id": "avessalom-podvodny",
+        "display_name": "Авессалом Подводный",
+    }
+    value["knowledge"]["method_version"]["provenance"] = {
+        "sources": [
+            {
+                "source_id": "material:1",
+                "source_version": "1",
+                "locator": "tp-natal-planets-avessalom-podvodny-v1",
+                "rights_status": "restricted",
+            }
+        ]
+    }
+    return value
 
 
 class VersionedMethodGuardTests(unittest.TestCase):
@@ -137,6 +179,26 @@ class VersionedMethodGuardTests(unittest.TestCase):
         guard = prepare_versioned_method_context(value)
         self.assertIn("Не показывай пользователю техническое имя", guard.prompt)
         self.assertIn("Не выводи пользователю список источников", guard.prompt)
+
+    def test_accepts_natal_method_with_isolated_natal_memory(self):
+        guard = prepare_versioned_method_context(natal_fixture())
+        self.assertEqual(
+            guard.receipt["family_id"], "author.natal.avessalom_podvodny"
+        )
+        self.assertEqual(guard.receipt["authorized_memory_scope"], "conversation.natal")
+        self.assertIn("core.natal_chart", guard.prompt)
+        self.assertIn("Авессалом Подводный", guard.prompt)
+
+    def test_rejects_cross_domain_memory_and_calculation_contract(self):
+        value = natal_fixture()
+        value["memory_context"]["scope"] = "conversation.transit"
+        with self.assertRaisesRegex(VersionedMethodContextError, "scope"):
+            prepare_versioned_method_context(value)
+
+        value = natal_fixture()
+        value["calculation"]["calculationContract"] = "core.transit_bands"
+        with self.assertRaisesRegex(VersionedMethodContextError, "calculation contract"):
+            prepare_versioned_method_context(value)
 
     def test_rejects_published_method_without_source_provenance(self):
         value = fixture()
