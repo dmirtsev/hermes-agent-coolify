@@ -111,6 +111,7 @@ def _require_provenance_sources(value: Any) -> list[dict[str, Any]]:
         "public_domain",
         "permission_recorded",
         "restricted",
+        "restricted_user_supplied",
     }
     normalized = []
     for index, item in enumerate(sources):
