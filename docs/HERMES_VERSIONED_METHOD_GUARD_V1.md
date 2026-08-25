@@ -22,6 +22,9 @@ before any provider dispatch. It rejects:
 The guard injects a closed system layer requiring Hermes to distinguish
 calculation facts, method interpretation and personal hypotheses. It forbids
 using MCP/RAG or general model knowledge to expand the astrology package.
+The accepted provenance vocabulary includes `restricted_user_supplied` for a
+user-provided source that TP Knowledge keeps restricted to the authorized
+method package; this label does not grant broader retrieval rights.
 The answer receives four explicit sections: calculation fact, selected-method
 interpretation, personal hypothesis, and limitations/next step. Cabinet's
 `show_method` and `show_sources` choices are converted into explicit closed
