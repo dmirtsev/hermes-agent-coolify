@@ -124,7 +124,7 @@ def natal_fixture():
                 "source_id": "material:1",
                 "source_version": "1",
                 "locator": "tp-natal-planets-avessalom-podvodny-v1",
-                "rights_status": "restricted",
+                "rights_status": "restricted_user_supplied",
             }
         ]
     }
@@ -155,6 +155,14 @@ class VersionedMethodGuardTests(unittest.TestCase):
         self.assertIn("Методика: tp.transit.period_guidance@1.0.0", guard.prompt)
         self.assertIn("source_id", guard.prompt)
         self.assertIn("authorized_interaction_memory", guard.prompt)
+
+    def test_accepts_restricted_user_supplied_provenance(self):
+        guard = prepare_versioned_method_context(natal_fixture())
+
+        self.assertEqual(
+            guard.receipt["family_id"], "author.natal.avessalom_podvodny"
+        )
+        self.assertIn("restricted_user_supplied", guard.prompt)
 
     def test_rejects_memory_outside_the_bounded_conversation_scope(self):
         value = fixture()
