@@ -42,7 +42,7 @@ export exact-reading content.
 The deterministic `tp-reading-<request_id>` identifier is an audit label only;
 it is never used to load or save shared history. This boundary prevents one
 user/profile from appearing in another user's exact-method answer.
-Prompt contract `1.2.0` additionally accepts one validated
+Legacy prompt contract `1.2.0` additionally accepts one validated
 `AuthorizedInteractionMemoryContext`: at most six bounded messages from the
 same Cabinet reading conversation. Transit readings require
 `conversation.transit`; natal general readings require `conversation.natal`.
@@ -51,6 +51,17 @@ or `core.natal_chart`) before model dispatch. The memory is prompt data for the
 personal hypothesis only, never a calculation fact, methodology rule or system
 instruction. Consumers must reject `1.0.0` and `1.1.0` receipts because they
 do not prove this complete boundary.
+
+Prompt contract `1.3.0` is selected when Cabinet passes
+`knowledge_retrieval_response_v2`. Hermes validates retrieval status,
+generation, warnings, mandatory-target coverage and every chunk citation
+before provider dispatch. `partial` is accepted only when usable cited
+evidence remains (for example, an RRF fallback after reranker timeout), while
+`failed` and an empty `partial` are rejected so Cabinet can retry retrieval.
+A completed response without chunks is allowed only as an explicit limitation:
+the model must not present its own knowledge as source-backed. Every sourced
+interpretation must cite one of the validated `citation_id` values, and the
+receipt preserves the validated retrieval metadata for Cabinet persistence.
 
 On a successful non-streaming response the gateway adds
 `tp_method_execution` with exact family, version, content hash, retrieval trace,

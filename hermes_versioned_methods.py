@@ -17,7 +17,9 @@ from typing import Any, Iterator
 
 SHA256_RE = re.compile(r"^[a-f0-9]{64}$")
 SEMVER_RE = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$")
-PROMPT_CONTRACT_VERSION = "1.2.0"
+LEGACY_PROMPT_CONTRACT_VERSION = "1.2.0"
+RETRIEVAL_V2_PROMPT_CONTRACT_VERSION = "1.3.0"
+RETRIEVAL_V2_CONTRACT = "knowledge_retrieval_response_v2"
 MAX_CONTEXT_BYTES = 180_000
 MAX_MEMORY_ITEMS = 6
 MAX_MEMORY_ITEM_CHARS = 2_000
@@ -100,6 +102,134 @@ def _require_bool(value: Any, label: str) -> bool:
     return value
 
 
+def _optional_retrieval_v2(knowledge: dict[str, Any]) -> dict[str, Any] | None:
+    """Validate the evidence-bearing TP Knowledge response when v2 is present."""
+    schema_version = knowledge.get("schema_version")
+    contract = knowledge.get("contract")
+    if schema_version != 2 and contract is None:
+        return None
+    if schema_version != 2 or contract != RETRIEVAL_V2_CONTRACT:
+        raise VersionedMethodContextError("unsupported knowledge retrieval contract")
+
+    status = _require_string(knowledge.get("status"), "knowledge.status")
+    if status not in {"completed", "partial", "failed"}:
+        raise VersionedMethodContextError("knowledge.status is invalid")
+
+    warnings = knowledge.get("warnings")
+    if (
+        not isinstance(warnings, list)
+        or len(warnings) > 32
+        or any(not isinstance(item, str) or not item for item in warnings)
+    ):
+        raise VersionedMethodContextError("knowledge.warnings must contain bounded strings")
+
+    coverage = knowledge.get("coverage")
+    if not isinstance(coverage, list) or len(coverage) > 16:
+        raise VersionedMethodContextError("knowledge.coverage is invalid")
+    normalized_coverage = []
+    for index, raw_item in enumerate(coverage):
+        item = _require_mapping(raw_item, f"knowledge.coverage[{index}]")
+        required = _require_bool(item.get("required"), "coverage.required")
+        covered = _require_bool(item.get("covered"), "coverage.covered")
+        chunk_ids = item.get("chunk_ids")
+        if not isinstance(chunk_ids, list) or any(
+            isinstance(chunk_id, bool) or not isinstance(chunk_id, int)
+            for chunk_id in chunk_ids
+        ):
+            raise VersionedMethodContextError("coverage.chunk_ids must contain integers")
+        if covered and not chunk_ids:
+            raise VersionedMethodContextError("covered retrieval target requires chunk evidence")
+        normalized_coverage.append(
+            {
+                "subquery_id": _require_string(item.get("subquery_id"), "coverage.subquery_id"),
+                "required": required,
+                "covered": covered,
+                "chunk_ids": chunk_ids,
+            }
+        )
+
+    chunks = knowledge.get("chunks")
+    if not isinstance(chunks, list) or len(chunks) > 20:
+        raise VersionedMethodContextError("knowledge.chunks is invalid")
+    citation_evidence = []
+    citation_ids: set[str] = set()
+    evidence_chunk_ids: set[int] = set()
+    for index, raw_chunk in enumerate(chunks):
+        chunk = _require_mapping(raw_chunk, f"knowledge.chunks[{index}]")
+        chunk_id = chunk.get("chunk_id")
+        if isinstance(chunk_id, bool) or not isinstance(chunk_id, int):
+            raise VersionedMethodContextError("knowledge chunk_id must be an integer")
+        citation = _require_mapping(chunk.get("citation"), "knowledge chunk citation")
+        citation_id = _require_string(citation.get("citation_id"), "citation.citation_id")
+        source_locator = _require_string(
+            citation.get("source_locator"), "citation.source_locator"
+        )
+        if citation_id in citation_ids:
+            raise VersionedMethodContextError("knowledge contains duplicate citations")
+        citation_ids.add(citation_id)
+        evidence_chunk_ids.add(chunk_id)
+        matched_subquery_ids = _require_unique_strings(
+            chunk.get("matched_subquery_ids", []), "chunk.matched_subquery_ids"
+        )
+        citation_evidence.append(
+            {
+                "chunk_id": chunk_id,
+                "title": str(chunk.get("title") or "")[:120],
+                "matched_subquery_ids": matched_subquery_ids,
+                "citation": {
+                    "citation_id": citation_id,
+                    "source_locator": source_locator,
+                },
+            }
+        )
+
+    if any(
+        not set(item["chunk_ids"]).issubset(evidence_chunk_ids)
+        for item in normalized_coverage
+    ):
+        raise VersionedMethodContextError("coverage references unavailable chunk evidence")
+
+    sources = knowledge.get("sources")
+    if not isinstance(sources, list) or len(sources) != len(citation_evidence):
+        raise VersionedMethodContextError("knowledge.sources must match chunk evidence")
+    source_citation_ids: set[str] = set()
+    for index, raw_source in enumerate(sources):
+        source = _require_mapping(raw_source, f"knowledge.sources[{index}]")
+        citation = _require_mapping(source.get("citation"), "knowledge source citation")
+        citation_id = _require_string(citation.get("citation_id"), "source citation_id")
+        source_locator = _require_string(
+            citation.get("source_locator"), "source source_locator"
+        )
+        if not source_locator or citation_id in source_citation_ids:
+            raise VersionedMethodContextError("knowledge.sources contains invalid citations")
+        source_citation_ids.add(citation_id)
+    if source_citation_ids != citation_ids:
+        raise VersionedMethodContextError("knowledge.sources citations differ from chunks")
+
+    if status == "failed":
+        raise VersionedMethodContextError(
+            "knowledge retrieval failed; retry retrieval before model generation"
+        )
+    if status == "partial" and not citation_evidence:
+        raise VersionedMethodContextError(
+            "partial knowledge retrieval requires usable citation evidence"
+        )
+
+    index_generation = _require_string(
+        knowledge.get("index_generation"), "knowledge.index_generation"
+    )
+    return {
+        "schema_version": 2,
+        "contract": RETRIEVAL_V2_CONTRACT,
+        "status": status,
+        "index_generation": index_generation,
+        "warnings": warnings,
+        "coverage": normalized_coverage,
+        "citation_evidence": citation_evidence,
+        "grounded": bool(citation_evidence),
+    }
+
+
 def _require_provenance_sources(value: Any) -> list[dict[str, Any]]:
     provenance = _require_mapping(value, "method_version.provenance")
     sources = provenance.get("sources")
@@ -180,7 +310,7 @@ def prepare_versioned_method_context(value: Any) -> VersionedMethodGuard | None:
     encoded = json.dumps(context, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     if len(encoded.encode("utf-8")) > MAX_CONTEXT_BYTES:
         raise VersionedMethodContextError("tp_reading_context is too large")
-    if context.get("schema_version") != 1:
+    if context.get("schema_version") not in {1, 2}:
         raise VersionedMethodContextError("unsupported tp_reading_context schema")
 
     request_id = _require_string(context.get("request_id"), "request_id")
@@ -211,6 +341,7 @@ def prepare_versioned_method_context(value: Any) -> VersionedMethodGuard | None:
     resolution = _require_mapping(context.get("resolution"), "resolution")
     resolved_ref = _method_ref(resolution.get("resolved"), "resolution.resolved")
     knowledge = _require_mapping(context.get("knowledge"), "knowledge")
+    retrieval_v2 = _optional_retrieval_v2(knowledge)
     retrieved_ref = _method_ref(knowledge.get("resolved_method"), "knowledge.resolved_method")
     if resolved_ref != retrieved_ref:
         raise VersionedMethodContextError("resolved and retrieved methods differ")
@@ -286,6 +417,19 @@ def prepare_versioned_method_context(value: Any) -> VersionedMethodGuard | None:
         ),
         f"Уровень подробности ответа: {detail_level}.",
     ]
+    if retrieval_v2 is not None:
+        presentation_instructions.extend(
+            [
+                "Трактовку источника подтверждай только переданными retrieval-фрагментами и ставь рядом их citation_id в квадратных скобках.",
+                "Не называй собственные знания модели сведениями из источника и не придумывай citation_id.",
+                "В разделе ограничений явно учти status, warnings и непокрытые обязательные подзапросы retrieval.",
+                (
+                    "Retrieval evidence отсутствует: не создавай трактовку источника; прямо укажи, что текущая база не дала подтверждающего фрагмента."
+                    if not retrieval_v2["grounded"]
+                    else "Retrieval evidence присутствует: используй только перечисленные citation_evidence."
+                ),
+            ]
+        )
 
     prompt_payload = {
         "method": {
@@ -305,12 +449,18 @@ def prepare_versioned_method_context(value: Any) -> VersionedMethodGuard | None:
         },
         "retrieved_context": knowledge.get("context_text", ""),
         "retrieved_sources": retrieved_sources,
+        "retrieval_evidence": retrieval_v2,
         "authorized_interaction_memory": authorized_memory,
         "presentation": presentation,
     }
     prompt = "\n".join(
         [
-            f"TP_ASTROLOGY_METHOD_CONTRACT_V{PROMPT_CONTRACT_VERSION}",
+            "TP_ASTROLOGY_METHOD_CONTRACT_V"
+            + (
+                RETRIEVAL_V2_PROMPT_CONTRACT_VERSION
+                if retrieval_v2 is not None
+                else LEGACY_PROMPT_CONTRACT_VERSION
+            ),
             "Это закрытый пакет одного астрологического разбора.",
             "Применяй только указанную точную методику и только переданные расчётные факты, правила и фрагменты.",
             "Не вызывай MCP/RAG для расширения астрологических знаний и не смешивай другие школы или общие трактовки модели.",
@@ -331,11 +481,16 @@ def prepare_versioned_method_context(value: Any) -> VersionedMethodGuard | None:
             "version": resolved_ref[1],
             "content_hash": resolved_ref[2],
             "retrieval_trace_id": retrieval_trace_id,
-            "prompt_contract_version": PROMPT_CONTRACT_VERSION,
+            "prompt_contract_version": (
+                RETRIEVAL_V2_PROMPT_CONTRACT_VERSION
+                if retrieval_v2 is not None
+                else LEGACY_PROMPT_CONTRACT_VERSION
+            ),
             "mixing_policy": mixing_policy,
             "context_isolation": "strict_v1",
             "shared_memory_used": False,
             "external_tools_used": False,
+            **({"retrieval": retrieval_v2} if retrieval_v2 is not None else {}),
             "authorized_memory_scope": authorized_memory["scope"],
             "authorized_memory_item_refs": [
                 item["memory_item_ref"] for item in authorized_memory["items"]

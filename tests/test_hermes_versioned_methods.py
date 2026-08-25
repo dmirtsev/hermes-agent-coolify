@@ -131,6 +131,58 @@ def natal_fixture():
     return value
 
 
+def retrieval_v2_fixture(*, status="partial", with_chunks=True):
+    value = natal_fixture()
+    value["schema_version"] = 2
+    knowledge = value["knowledge"]
+    knowledge.update(
+        {
+            "schema_version": 2,
+            "contract": "knowledge_retrieval_response_v2",
+            "status": status,
+            "index_generation": "ctx-rag-20260825-2",
+            "warnings": ["reranker_timeout"] if status == "partial" else [],
+            "coverage": [
+                {
+                    "subquery_id": "sun.sign",
+                    "required": True,
+                    "covered": with_chunks,
+                    "chunk_ids": [285] if with_chunks else [],
+                }
+            ],
+            "chunks": (
+                [
+                    {
+                        "chunk_id": 285,
+                        "title": "Солнце в Деве",
+                        "matched_subquery_ids": ["sun.sign"],
+                        "citation": {
+                            "citation_id": "material:1:chunk:285",
+                            "source_locator": "material/1#chunk-285",
+                        },
+                    }
+                ]
+                if with_chunks
+                else []
+            ),
+        }
+    )
+    knowledge["sources"] = (
+        [
+            {
+                "chunk_id": 285,
+                "citation": {
+                    "citation_id": "material:1:chunk:285",
+                    "source_locator": "material/1#chunk-285",
+                },
+            }
+        ]
+        if with_chunks
+        else []
+    )
+    return value
+
+
 class VersionedMethodGuardTests(unittest.TestCase):
     def test_strict_context_scope_is_local_and_resets(self):
         self.assertFalse(strict_context_active())
@@ -196,6 +248,56 @@ class VersionedMethodGuardTests(unittest.TestCase):
         self.assertEqual(guard.receipt["authorized_memory_scope"], "conversation.natal")
         self.assertIn("core.natal_chart", guard.prompt)
         self.assertIn("Авессалом Подводный", guard.prompt)
+
+    def test_accepts_partial_retrieval_v2_with_grounded_citations(self):
+        guard = prepare_versioned_method_context(retrieval_v2_fixture())
+
+        self.assertEqual(guard.receipt["prompt_contract_version"], "1.3.0")
+        self.assertEqual(guard.receipt["retrieval"]["status"], "partial")
+        self.assertEqual(
+            guard.receipt["retrieval"]["index_generation"],
+            "ctx-rag-20260825-2",
+        )
+        self.assertTrue(guard.receipt["retrieval"]["grounded"])
+        self.assertIn("material:1:chunk:285", guard.prompt)
+        self.assertIn("reranker_timeout", guard.prompt)
+        self.assertIn("не придумывай citation_id", guard.prompt)
+
+    def test_accepts_completed_retrieval_v2_without_evidence_as_explicit_limitation(self):
+        guard = prepare_versioned_method_context(
+            retrieval_v2_fixture(status="completed", with_chunks=False)
+        )
+
+        self.assertFalse(guard.receipt["retrieval"]["grounded"])
+        self.assertIn("Retrieval evidence отсутствует", guard.prompt)
+
+    def test_rejects_failed_or_empty_partial_retrieval_v2_before_generation(self):
+        with self.assertRaisesRegex(VersionedMethodContextError, "retry retrieval"):
+            prepare_versioned_method_context(
+                retrieval_v2_fixture(status="failed", with_chunks=False)
+            )
+        with self.assertRaisesRegex(VersionedMethodContextError, "citation evidence"):
+            prepare_versioned_method_context(
+                retrieval_v2_fixture(status="partial", with_chunks=False)
+            )
+
+    def test_rejects_retrieval_v2_chunk_without_citation(self):
+        value = retrieval_v2_fixture()
+        value["knowledge"]["chunks"][0]["citation"] = {}
+
+        with self.assertRaisesRegex(VersionedMethodContextError, "citation"):
+            prepare_versioned_method_context(value)
+
+    def test_rejects_retrieval_v2_coverage_or_sources_without_matching_chunks(self):
+        value = retrieval_v2_fixture()
+        value["knowledge"]["coverage"][0]["chunk_ids"] = [999]
+        with self.assertRaisesRegex(VersionedMethodContextError, "coverage"):
+            prepare_versioned_method_context(value)
+
+        value = retrieval_v2_fixture()
+        value["knowledge"]["sources"][0]["citation"]["citation_id"] = "foreign"
+        with self.assertRaisesRegex(VersionedMethodContextError, "sources citations"):
+            prepare_versioned_method_context(value)
 
     def test_rejects_cross_domain_memory_and_calculation_contract(self):
         value = natal_fixture()

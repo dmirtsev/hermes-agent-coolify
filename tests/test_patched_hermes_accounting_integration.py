@@ -61,6 +61,19 @@ class PatchedHermesAccountingIntegrationTests(unittest.TestCase):
         self.assertTrue(captured["skip_context_files"])
         self.assertTrue(captured["skip_memory"])
 
+    def test_built_image_guard_preserves_retrieval_v2_evidence_receipt(self) -> None:
+        from agent.versioned_methods import prepare_versioned_method_context
+        from test_hermes_versioned_methods import retrieval_v2_fixture
+
+        guard = prepare_versioned_method_context(retrieval_v2_fixture())
+
+        self.assertEqual(guard.receipt["prompt_contract_version"], "1.3.0")
+        self.assertEqual(guard.receipt["retrieval"]["status"], "partial")
+        self.assertEqual(
+            guard.receipt["retrieval"]["citation_evidence"][0]["citation"]["citation_id"],
+            "material:1:chunk:285",
+        )
+
     def test_strict_context_blocks_plugin_hooks_and_middleware(self) -> None:
         from agent.versioned_methods import strict_context_scope
         from hermes_cli import plugins
