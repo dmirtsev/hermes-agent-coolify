@@ -113,6 +113,13 @@ def natal_fixture():
         "facts": [{"fact_id": "natal-sun-1", "object": "Sun", "sign": "Aries"}],
     }
     value["knowledge"]["method_version"]["method"]["rule_refs"] = []
+    value["knowledge"]["method_version"]["method"]["steps"] = [
+        {
+            "id": "use_selected_author_source",
+            "position": 1,
+            "instruction": "Use only the selected author's retrieved fragments.",
+        }
+    ]
     value["knowledge"]["rules"] = []
     value["knowledge"]["method_version"]["author"] = {
         "id": "avessalom-podvodny",
@@ -213,7 +220,9 @@ class VersionedMethodGuardTests(unittest.TestCase):
         self.assertIn("Не показывай пользователю источники", guard.prompt)
         self.assertNotIn("Структура ответа обязательна", guard.prompt)
         self.assertNotIn("Не вызывай MCP/RAG", guard.prompt)
-        self.assertIn("Only this rule", guard.prompt)
+        self.assertNotIn("Only this rule", guard.prompt)
+        self.assertNotIn("expert_guidance", guard.prompt)
+        self.assertNotIn("use_selected_author_source", guard.prompt)
         self.assertIn("relevant_dialog_context", guard.prompt)
         self.assertNotIn("source_id", guard.prompt)
         self.assertNotIn("authorized_interaction_memory", guard.prompt)
@@ -261,6 +270,7 @@ class VersionedMethodGuardTests(unittest.TestCase):
         self.assertEqual(guard.receipt["authorized_memory_scope"], "conversation.natal")
         self.assertNotIn("core.natal_chart", guard.prompt)
         self.assertNotIn("Авессалом Подводный", guard.prompt)
+        self.assertNotIn("Use only the selected author's", guard.prompt)
 
     def test_accepts_partial_retrieval_v2_with_grounded_citations(self):
         guard = prepare_versioned_method_context(retrieval_v2_fixture())

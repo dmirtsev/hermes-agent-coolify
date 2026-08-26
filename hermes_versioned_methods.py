@@ -459,18 +459,6 @@ def prepare_versioned_method_context(value: Any) -> VersionedMethodGuard | None:
         )
 
     prompt_payload = {
-        "expert_guidance": {
-            "steps": [
-                step.get("instruction")
-                for step in steps
-                if isinstance(step, dict) and isinstance(step.get("instruction"), str)
-            ],
-            "rules": [
-                rule.get("rule_text")
-                for rule in rules
-                if isinstance(rule.get("rule_text"), str)
-            ],
-        },
         "calculated_facts": _plain_facts(facts),
         "expert_materials": _expert_materials(knowledge.get("chunks")),
         "relevant_dialog_context": [

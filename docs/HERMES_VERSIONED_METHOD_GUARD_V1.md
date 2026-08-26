@@ -35,6 +35,9 @@ development options rather than frightening, humiliating or fatalistic
 verdicts. Only clean expert titles and prose are exposed to the model; retrieval
 IDs, citations, statuses, scores and provenance labels remain in the validated
 package and Cabinet evidence without becoming model or user-facing markup.
+Legacy method steps and rules are also kept out of the model prompt: they pin
+retrieval and audit identity but cannot override the natural-answer canons with
+old requirements for source-only synthesis, attribution or mandatory sections.
 
 Each accepted reading runs in `strict_v1` context isolation. Hermes discards
 caller-supplied system messages and assistant history, retains only the current
