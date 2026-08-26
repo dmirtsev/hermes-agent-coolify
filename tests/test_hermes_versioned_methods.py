@@ -155,6 +155,7 @@ def retrieval_v2_fixture(*, status="partial", with_chunks=True):
                     {
                         "chunk_id": 285,
                         "title": "Солнце в Деве",
+                        "text": "Экспертный текст о проявлениях Солнца.",
                         "matched_subquery_ids": ["sun.sign"],
                         "citation": {
                             "citation_id": "material:1:chunk:285",
@@ -206,11 +207,16 @@ class VersionedMethodGuardTests(unittest.TestCase):
         self.assertIn("Свободно используй знания модели", guard.prompt)
         self.assertIn("единый текст без ссылок", guard.prompt)
         self.assertIn("наиболее гуманный и конструктивный ответ", guard.prompt)
+        self.assertIn("не приговоры", guard.prompt)
+        self.assertIn("Не показывай пользователю источники", guard.prompt)
         self.assertNotIn("Структура ответа обязательна", guard.prompt)
         self.assertNotIn("Не вызывай MCP/RAG", guard.prompt)
         self.assertIn("Only this rule", guard.prompt)
-        self.assertIn("source_id", guard.prompt)
-        self.assertIn("authorized_interaction_memory", guard.prompt)
+        self.assertIn("relevant_dialog_context", guard.prompt)
+        self.assertNotIn("source_id", guard.prompt)
+        self.assertNotIn("authorized_interaction_memory", guard.prompt)
+        self.assertNotIn("fact_id", guard.prompt)
+        self.assertNotIn(guard.receipt["content_hash"], guard.prompt)
 
     def test_accepts_restricted_user_supplied_provenance(self):
         guard = prepare_versioned_method_context(natal_fixture())
@@ -218,7 +224,7 @@ class VersionedMethodGuardTests(unittest.TestCase):
         self.assertEqual(
             guard.receipt["family_id"], "author.natal.avessalom_podvodny"
         )
-        self.assertIn("restricted_user_supplied", guard.prompt)
+        self.assertNotIn("restricted_user_supplied", guard.prompt)
 
     def test_rejects_memory_outside_the_bounded_conversation_scope(self):
         value = fixture()
@@ -241,10 +247,9 @@ class VersionedMethodGuardTests(unittest.TestCase):
         value["profile"]["presentation"]["show_method"] = False
         value["profile"]["presentation"]["show_sources"] = False
         guard = prepare_versioned_method_context(value)
-        self.assertIn('"show_method": false', guard.prompt)
-        self.assertIn('"show_sources": false', guard.prompt)
-        self.assertNotIn("Не показывай пользователю техническое имя", guard.prompt)
-        self.assertNotIn("Не выводи пользователю список источников", guard.prompt)
+        self.assertNotIn('"show_method"', guard.prompt)
+        self.assertNotIn('"show_sources"', guard.prompt)
+        self.assertIn('"detail_level": "standard"', guard.prompt)
 
     def test_accepts_natal_method_with_isolated_natal_memory(self):
         guard = prepare_versioned_method_context(natal_fixture())
@@ -252,8 +257,8 @@ class VersionedMethodGuardTests(unittest.TestCase):
             guard.receipt["family_id"], "author.natal.avessalom_podvodny"
         )
         self.assertEqual(guard.receipt["authorized_memory_scope"], "conversation.natal")
-        self.assertIn("core.natal_chart", guard.prompt)
-        self.assertIn("Авессалом Подводный", guard.prompt)
+        self.assertNotIn("core.natal_chart", guard.prompt)
+        self.assertNotIn("Авессалом Подводный", guard.prompt)
 
     def test_accepts_partial_retrieval_v2_with_grounded_citations(self):
         guard = prepare_versioned_method_context(retrieval_v2_fixture())
@@ -265,8 +270,10 @@ class VersionedMethodGuardTests(unittest.TestCase):
             "ctx-rag-20260825-2",
         )
         self.assertTrue(guard.receipt["retrieval"]["grounded"])
-        self.assertIn("material:1:chunk:285", guard.prompt)
-        self.assertIn("reranker_timeout", guard.prompt)
+        self.assertIn("Экспертный текст о проявлениях Солнца.", guard.prompt)
+        self.assertNotIn("material:1:chunk:285", guard.prompt)
+        self.assertNotIn("reranker_timeout", guard.prompt)
+        self.assertNotIn("retrieval_evidence", guard.prompt)
         self.assertIn("единый текст без ссылок", guard.prompt)
         self.assertNotIn("не придумывай citation_id", guard.prompt)
         self.assertNotIn("ставь рядом их citation_id", guard.prompt)
