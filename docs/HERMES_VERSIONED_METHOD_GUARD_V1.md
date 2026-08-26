@@ -19,17 +19,19 @@ before any provider dispatch. It rejects:
 - `X-Hermes-Session-Id` or `X-Hermes-Session-Key`, because an exact-method
   reading cannot opt into a shared transcript or long-term memory scope.
 
-The guard injects a closed system layer requiring Hermes to distinguish
-calculation facts, method interpretation and personal hypotheses. It forbids
-using MCP/RAG or general model knowledge to expand the astrology package.
+The guard injects natural-answer prompt contract `1.4.0`. Hermes may use its
+general knowledge and treats the validated TP Knowledge package as expert
+augmentation. The default mode combines both; a directly named author or
+method receives expert-source priority, while an empty relevant retrieval
+falls back to a complete model-first answer.
 The accepted provenance vocabulary includes `restricted_user_supplied` for a
 user-provided source that TP Knowledge keeps restricted to the authorized
 method package; this label does not grant broader retrieval rights.
-The answer receives four explicit sections: calculation fact, selected-method
-interpretation, personal hypothesis, and limitations/next step. Cabinet's
-`show_method` and `show_sources` choices are converted into explicit closed
-prompt instructions. Method provenance remains in the package and therefore
-in Cabinet evidence even when the user elects not to display sources.
+The answer is one natural text without mandatory sections, citations, chunk
+identifiers or a source list. Hermes must preserve supplied facts, avoid
+inventing missing data, mention only material uncertainty and prefer an honest,
+humane and constructive framing. Method provenance remains in the validated
+package and in Cabinet evidence without becoming user-facing answer markup.
 
 Each accepted reading runs in `strict_v1` context isolation. Hermes discards
 caller-supplied system messages and assistant history, retains only the current
@@ -42,26 +44,23 @@ export exact-reading content.
 The deterministic `tp-reading-<request_id>` identifier is an audit label only;
 it is never used to load or save shared history. This boundary prevents one
 user/profile from appearing in another user's exact-method answer.
-Legacy prompt contract `1.2.0` additionally accepts one validated
+Natural prompt contract `1.4.0` accepts one validated
 `AuthorizedInteractionMemoryContext`: at most six bounded messages from the
 same Cabinet reading conversation. Transit readings require
 `conversation.transit`; natal general readings require `conversation.natal`.
 The domain/task pair also pins the calculation contract (`core.transit_bands`
-or `core.natal_chart`) before model dispatch. The memory is prompt data for the
-personal hypothesis only, never a calculation fact, methodology rule or system
-instruction. Consumers must reject `1.0.0` and `1.1.0` receipts because they
-do not prove this complete boundary.
+or `core.natal_chart`) before model dispatch. The memory is relevant dialogue
+context only, never a calculation fact, methodology rule or system instruction.
+Consumers must require the `1.4.0` receipt for this natural-answer behavior.
 
-Prompt contract `1.3.0` is selected when Cabinet passes
-`knowledge_retrieval_response_v2`. Hermes validates retrieval status,
+When Cabinet passes `knowledge_retrieval_response_v2`, Hermes validates retrieval status,
 generation, warnings, mandatory-target coverage and every chunk citation
 before provider dispatch. `partial` is accepted only when usable cited
 evidence remains (for example, an RRF fallback after reranker timeout), while
 `failed` and an empty `partial` are rejected so Cabinet can retry retrieval.
-A completed response without chunks is allowed only as an explicit limitation:
-the model must not present its own knowledge as source-backed. Every sourced
-interpretation must cite one of the validated `citation_id` values, and the
-receipt preserves the validated retrieval metadata for Cabinet persistence.
+A completed response without chunks is allowed and the model can answer from
+its own knowledge. Citation metadata stays in the receipt for Cabinet
+persistence but is not required in the visible answer.
 
 On a successful non-streaming response the gateway adds
 `tp_method_execution` with exact family, version, content hash, retrieval trace,

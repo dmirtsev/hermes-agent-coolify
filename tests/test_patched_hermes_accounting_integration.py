@@ -67,7 +67,7 @@ class PatchedHermesAccountingIntegrationTests(unittest.TestCase):
 
         guard = prepare_versioned_method_context(retrieval_v2_fixture())
 
-        self.assertEqual(guard.receipt["prompt_contract_version"], "1.3.0")
+        self.assertEqual(guard.receipt["prompt_contract_version"], "1.4.0")
         self.assertEqual(guard.receipt["retrieval"]["status"], "partial")
         self.assertEqual(
             guard.receipt["retrieval"]["citation_evidence"][0]["citation"]["citation_id"],
