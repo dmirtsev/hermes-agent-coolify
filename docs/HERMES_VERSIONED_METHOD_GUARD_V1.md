@@ -30,8 +30,11 @@ method package; this label does not grant broader retrieval rights.
 The answer is one natural text without mandatory sections, citations, chunk
 identifiers or a source list. Hermes must preserve supplied facts, avoid
 inventing missing data, mention only material uncertainty and prefer an honest,
-humane and constructive framing. Method provenance remains in the validated
-package and in Cabinet evidence without becoming user-facing answer markup.
+humane and constructive framing. Astrology is expressed as tendencies and
+development options rather than frightening, humiliating or fatalistic
+verdicts. Only clean expert titles and prose are exposed to the model; retrieval
+IDs, citations, statuses, scores and provenance labels remain in the validated
+package and Cabinet evidence without becoming model or user-facing markup.
 
 Each accepted reading runs in `strict_v1` context isolation. Hermes discards
 caller-supplied system messages and assistant history, retains only the current
