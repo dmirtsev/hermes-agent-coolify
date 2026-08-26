@@ -61,6 +61,46 @@ class PatchedHermesAccountingIntegrationTests(unittest.TestCase):
         self.assertTrue(captured["skip_context_files"])
         self.assertTrue(captured["skip_memory"])
 
+    def test_model_only_agent_has_no_tools_but_keeps_conversation_context(self) -> None:
+        from gateway.platforms.api_server import APIServerAdapter
+
+        captured = {}
+
+        class CapturingAgent:
+            def __init__(self, **kwargs):
+                captured.update(kwargs)
+
+        adapter = object.__new__(APIServerAdapter)
+        adapter._session_db = object()
+
+        with patch("run_agent.AIAgent", CapturingAgent), patch(
+            "gateway.run._resolve_runtime_agent_kwargs", return_value={}
+        ), patch(
+            "gateway.run._resolve_gateway_model", return_value="test/model"
+        ), patch(
+            "gateway.run._load_gateway_config", return_value={}
+        ), patch(
+            "gateway.run.GatewayRunner._load_reasoning_config", return_value={}
+        ), patch(
+            "gateway.run.GatewayRunner._load_fallback_model", return_value=None
+        ), patch(
+            "hermes_cli.tools_config._get_platform_tools",
+            return_value={"memory", "mcp"},
+        ):
+            adapter._create_agent(
+                ephemeral_system_prompt="model-only chart reading",
+                session_id="chart-conversation-1",
+                gateway_session_key="chart-session",
+                knowledge_tools_disabled=True,
+            )
+
+        self.assertEqual(captured["enabled_toolsets"], [])
+        self.assertEqual(captured["max_iterations"], 1)
+        self.assertIs(captured["session_db"], adapter._session_db)
+        self.assertEqual(captured["gateway_session_key"], "chart-session")
+        self.assertFalse(captured["skip_context_files"])
+        self.assertFalse(captured["skip_memory"])
+
     def test_built_image_guard_preserves_retrieval_v2_evidence_receipt(self) -> None:
         from agent.versioned_methods import prepare_versioned_method_context
         from test_hermes_versioned_methods import retrieval_v2_fixture
@@ -140,6 +180,63 @@ class PatchedHermesAccountingIntegrationTests(unittest.TestCase):
         self.assertNotIn("FORBIDDEN-SYSTEM-SENTINEL", call["ephemeral_system_prompt"])
         self.assertNotIn("FORBIDDEN-HISTORY-SENTINEL", call["ephemeral_system_prompt"])
         self.assertEqual(response.headers["X-Hermes-Context-Isolation"], "strict-v1")
+
+    def test_model_only_deny_overrides_conflicting_knowledge_payload(self) -> None:
+        from gateway.platforms.api_server import APIServerAdapter
+
+        body = {
+            "model": "ignored",
+            "stream": False,
+            "messages": [
+                {"role": "assistant", "content": "Предыдущий контекст"},
+                {"role": "user", "content": "Разбери транзит"},
+            ],
+            "tp_knowledge_policy": {"schema_version": 1, "mode": "model_only"},
+            "allowed_knowledge_bases": ["luna"],
+            # Deliberately invalid: model_only must ignore it instead of
+            # allowing the contradictory package to activate retrieval mode.
+            "tp_reading_context": {"schema_version": 999},
+        }
+
+        class Request:
+            headers = {
+                "Authorization": "Bearer gateway-token",
+                "Idempotency-Key": "hermes-model-only-1",
+            }
+
+            async def json(self):
+                return body
+
+        adapter = object.__new__(APIServerAdapter)
+        adapter._api_key = "gateway-token"
+        adapter._model_name = "test/model"
+        adapter._run_agent = AsyncMock(
+            return_value=(
+                {"final_response": "model-only", "completed": True},
+                {"input_tokens": 1, "output_tokens": 1, "total_tokens": 2},
+            )
+        )
+
+        with patch(
+            "gateway.platforms.api_server.durable_payload_sha256",
+            return_value="digest-model-only",
+        ), patch(
+            "gateway.platforms.api_server.durable_begin_request",
+            return_value={"state": "received"},
+        ), patch("gateway.platforms.api_server.durable_complete_request"):
+            response = asyncio.run(adapter._handle_chat_completions(Request()))
+
+        self.assertEqual(response.status, 200)
+        call = adapter._run_agent.await_args.kwargs
+        self.assertFalse(call["strict_context_only"])
+        self.assertTrue(call["knowledge_tools_disabled"])
+        self.assertEqual(len(call["conversation_history"]), 1)
+        self.assertEqual(response.headers["X-Hermes-Knowledge-Policy"], "model_only")
+        payload = json.loads(response.text)
+        self.assertEqual(payload["tp_knowledge_policy"]["mode"], "model_only")
+        self.assertFalse(
+            payload["tp_knowledge_policy"]["external_knowledge_tools_used"]
+        )
 
     def test_transport_retains_upstream_evidence_and_enables_routing_metadata(self) -> None:
         from agent.transports.chat_completions import ChatCompletionsTransport

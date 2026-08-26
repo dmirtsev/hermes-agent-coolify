@@ -608,6 +608,11 @@ from agent.versioned_methods import (
     prepare_versioned_method_context,
     strict_context_scope,
 )
+from agent.knowledge_policy import (
+    KnowledgePolicyError,
+    MODEL_ONLY,
+    prepare_knowledge_policy,
+)
 
 logger = logging.getLogger(__name__)
 """,
@@ -621,6 +626,7 @@ replace_once(
 ''',
     '''        gateway_session_key: Optional[str] = None,
         strict_context_only: bool = False,
+        knowledge_tools_disabled: bool = False,
     ) -> Any:
 ''',
     "strict context agent creation argument",
@@ -635,8 +641,10 @@ replace_once(
     '''        enabled_toolsets = sorted(_get_platform_tools(user_config, "api_server"))
 
         max_iterations = int(os.getenv("HERMES_MAX_ITERATIONS", "90"))
-        if strict_context_only:
-            # Exact-method readings execute without built-in or MCP tools.
+        if strict_context_only or knowledge_tools_disabled:
+            # Exact-method and caller-denied readings execute without built-in
+            # or MCP tools. A globally registered knowledge MCP server cannot
+            # override the request-scoped deny.
             enabled_toolsets = []
             max_iterations = 1
 ''',
@@ -675,9 +683,27 @@ replace_once(
             return web.json_response(_openai_error("Invalid JSON in request body"), status=400)
 
         try:
-            versioned_method_guard = prepare_versioned_method_context(
-                body.get("tp_reading_context") if isinstance(body, dict) else None
+            knowledge_policy_guard = prepare_knowledge_policy(
+                body.get("tp_knowledge_policy") if isinstance(body, dict) else None
             )
+        except KnowledgePolicyError as exc:
+            return web.json_response(
+                _openai_error(str(exc), code="invalid_tp_knowledge_policy"),
+                status=400,
+            )
+
+        try:
+            # An explicit model_only deny wins over any contradictory reading
+            # package or allowed knowledge-base list supplied in the payload.
+            reading_context = (
+                None
+                if knowledge_policy_guard is not None
+                and knowledge_policy_guard.mode == MODEL_ONLY
+                else body.get("tp_reading_context")
+                if isinstance(body, dict)
+                else None
+            )
+            versioned_method_guard = prepare_versioned_method_context(reading_context)
         except VersionedMethodContextError as exc:
             return web.json_response(
                 _openai_error(str(exc), code="invalid_tp_reading_context"),
@@ -932,6 +958,9 @@ replace_once(
                 gateway_session_key=gateway_session_key,
                 accounting_request_key=idempotency_key,
                 strict_context_only=versioned_method_guard is not None,
+                knowledge_tools_disabled=bool(
+                    knowledge_policy_guard and knowledge_policy_guard.tools_disabled
+                ),
             )
 
         if idempotency_key:
@@ -1044,6 +1073,8 @@ replace_once(
             response_headers["X-Hermes-Idempotency-Replayed"] = "true"
         if versioned_method_guard is not None:
             response_headers["X-Hermes-Context-Isolation"] = "strict-v1"
+        if knowledge_policy_guard is not None:
+            response_headers["X-Hermes-Knowledge-Policy"] = knowledge_policy_guard.mode
 
         # Hard-fail path: no usable assistant text AND a real failure → 5xx
 ''',
@@ -1058,6 +1089,7 @@ replace_once(
     '''        gateway_session_key: Optional[str] = None,
         accounting_request_key: Optional[str] = None,
         strict_context_only: bool = False,
+        knowledge_tools_disabled: bool = False,
     ) -> tuple:
 ''',
     "durable request key execution argument",
@@ -1086,6 +1118,7 @@ replace_once(
                     tool_complete_callback=tool_complete_callback,
                     gateway_session_key=gateway_session_key,
                     strict_context_only=strict_context_only,
+                    knowledge_tools_disabled=knowledge_tools_disabled,
                 )
             if agent_ref is not None:
 ''',
@@ -1208,6 +1241,8 @@ replace_once(
 ''',
     '''        if versioned_method_guard is not None:
             response_data["tp_method_execution"] = versioned_method_guard.receipt
+        if knowledge_policy_guard is not None:
+            response_data["tp_knowledge_policy"] = knowledge_policy_guard.receipt
 
         if is_partial or is_failed or not completed:
             response_data["hermes"] = {
