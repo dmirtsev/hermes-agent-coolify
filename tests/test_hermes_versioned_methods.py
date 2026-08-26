@@ -190,21 +190,25 @@ class VersionedMethodGuardTests(unittest.TestCase):
             self.assertTrue(strict_context_active())
         self.assertFalse(strict_context_active())
 
-    def test_builds_exact_receipt_and_closed_prompt(self):
+    def test_builds_exact_receipt_and_natural_prompt(self):
         guard = prepare_versioned_method_context(fixture())
         self.assertEqual(guard.receipt["family_id"], "tp.transit.period_guidance")
         self.assertEqual(guard.receipt["retrieval_trace_id"], "trace-1")
         self.assertEqual(guard.isolated_session_id, "tp-reading-hermes-request-1")
         self.assertEqual(guard.receipt["context_isolation"], "strict_v1")
-        self.assertEqual(guard.receipt["prompt_contract_version"], "1.2.0")
+        self.assertEqual(guard.receipt["prompt_contract_version"], "1.4.0")
         self.assertFalse(guard.receipt["shared_memory_used"])
         self.assertFalse(guard.receipt["external_tools_used"])
         self.assertEqual(
             guard.receipt["authorized_memory_item_refs"], ["message-1"]
         )
-        self.assertIn("Не вызывай MCP/RAG", guard.prompt)
+        self.assertIn("Ответь прямо, естественно и по существу", guard.prompt)
+        self.assertIn("Свободно используй знания модели", guard.prompt)
+        self.assertIn("единый текст без ссылок", guard.prompt)
+        self.assertIn("наиболее гуманный и конструктивный ответ", guard.prompt)
+        self.assertNotIn("Структура ответа обязательна", guard.prompt)
+        self.assertNotIn("Не вызывай MCP/RAG", guard.prompt)
         self.assertIn("Only this rule", guard.prompt)
-        self.assertIn("Методика: tp.transit.period_guidance@1.0.0", guard.prompt)
         self.assertIn("source_id", guard.prompt)
         self.assertIn("authorized_interaction_memory", guard.prompt)
 
@@ -232,13 +236,15 @@ class VersionedMethodGuardTests(unittest.TestCase):
         with self.assertRaisesRegex(VersionedMethodContextError, "differs"):
             prepare_versioned_method_context(value)
 
-    def test_presentation_switches_are_enforced_in_closed_prompt(self):
+    def test_presentation_switches_remain_data_without_forcing_output_sections(self):
         value = fixture()
         value["profile"]["presentation"]["show_method"] = False
         value["profile"]["presentation"]["show_sources"] = False
         guard = prepare_versioned_method_context(value)
-        self.assertIn("Не показывай пользователю техническое имя", guard.prompt)
-        self.assertIn("Не выводи пользователю список источников", guard.prompt)
+        self.assertIn('"show_method": false', guard.prompt)
+        self.assertIn('"show_sources": false', guard.prompt)
+        self.assertNotIn("Не показывай пользователю техническое имя", guard.prompt)
+        self.assertNotIn("Не выводи пользователю список источников", guard.prompt)
 
     def test_accepts_natal_method_with_isolated_natal_memory(self):
         guard = prepare_versioned_method_context(natal_fixture())
@@ -252,7 +258,7 @@ class VersionedMethodGuardTests(unittest.TestCase):
     def test_accepts_partial_retrieval_v2_with_grounded_citations(self):
         guard = prepare_versioned_method_context(retrieval_v2_fixture())
 
-        self.assertEqual(guard.receipt["prompt_contract_version"], "1.3.0")
+        self.assertEqual(guard.receipt["prompt_contract_version"], "1.4.0")
         self.assertEqual(guard.receipt["retrieval"]["status"], "partial")
         self.assertEqual(
             guard.receipt["retrieval"]["index_generation"],
@@ -261,15 +267,18 @@ class VersionedMethodGuardTests(unittest.TestCase):
         self.assertTrue(guard.receipt["retrieval"]["grounded"])
         self.assertIn("material:1:chunk:285", guard.prompt)
         self.assertIn("reranker_timeout", guard.prompt)
-        self.assertIn("не придумывай citation_id", guard.prompt)
+        self.assertIn("единый текст без ссылок", guard.prompt)
+        self.assertNotIn("не придумывай citation_id", guard.prompt)
+        self.assertNotIn("ставь рядом их citation_id", guard.prompt)
 
-    def test_accepts_completed_retrieval_v2_without_evidence_as_explicit_limitation(self):
+    def test_accepts_completed_retrieval_v2_without_evidence_for_model_first_answer(self):
         guard = prepare_versioned_method_context(
             retrieval_v2_fixture(status="completed", with_chunks=False)
         )
 
         self.assertFalse(guard.receipt["retrieval"]["grounded"])
-        self.assertIn("Retrieval evidence отсутствует", guard.prompt)
+        self.assertIn("если подходящих материалов нет", guard.prompt)
+        self.assertNotIn("Retrieval evidence отсутствует", guard.prompt)
 
     def test_rejects_failed_or_empty_partial_retrieval_v2_before_generation(self):
         with self.assertRaisesRegex(VersionedMethodContextError, "retry retrieval"):
