@@ -91,9 +91,10 @@ class FakeRequest:
 
 
 class FakeCompletionClient:
-    def __init__(self, calls, generated):
+    def __init__(self, calls, generated, finish_reason="stop"):
         self._calls = calls
         self._generated = generated
+        self._finish_reason = finish_reason
         self.chat = SimpleNamespace(completions=SimpleNamespace(create=self.create))
 
     def create(self, **kwargs):
@@ -117,21 +118,31 @@ class FakeCompletionClient:
                 completion_tokens_details=SimpleNamespace(reasoning_tokens=8),
             ),
             openrouter_metadata=None,
-            choices=[SimpleNamespace(message=SimpleNamespace(content=content))],
+            choices=[
+                SimpleNamespace(
+                    message=SimpleNamespace(content=content),
+                    finish_reason=self._finish_reason,
+                )
+            ],
         )
 
 
 class FakeAdapter:
-    def __init__(self, generated, auth_error=None):
+    def __init__(self, generated, auth_error=None, finish_reason="stop"):
         self.calls = []
         self.generated = generated
         self.auth_error = auth_error
+        self.finish_reason = finish_reason
 
     def _check_auth(self, _request):
         return self.auth_error
 
     def _create_agent(self):
-        client = FakeCompletionClient(self.calls, self.generated)
+        client = FakeCompletionClient(
+            self.calls,
+            self.generated,
+            finish_reason=self.finish_reason,
+        )
         return SimpleNamespace(
             provider="openrouter",
             model="configured/fixed-model",
@@ -284,7 +295,36 @@ class HermesSemanticPlannerTests(unittest.TestCase):
 
         self.assertEqual(response.status, 422)
         self.assertEqual(response.payload["error"]["code"], "invalid_planner_output")
+        self.assertEqual(
+            response.payload["error"]["details"]["validation_error"],
+            "generated JSON is incomplete or invalid",
+        )
         self.assertEqual(len(adapter.calls), 1)
+
+    def test_token_limit_is_reported_without_raw_model_output(self):
+        adapter = FakeAdapter("partial private output", finish_reason="length")
+        with tempfile.TemporaryDirectory() as directory, patch.dict(
+            os.environ,
+            {
+                "HERMES_ACCOUNTING_JOURNAL_PATH": str(Path(directory) / "journal.sqlite3"),
+                "HERMES_RUNTIME_TIER": "balanced",
+                "HERMES_RUNTIME_ID": "hermes-test-balanced",
+            },
+            clear=False,
+        ):
+            response = asyncio.run(
+                planner.handle_semantic_plan(
+                    adapter,
+                    FakeRequest(valid_request(), key="semantic-plan-truncated"),
+                    FakeWeb,
+                )
+            )
+
+        details = response.payload["error"]["details"]
+        self.assertEqual(response.status, 422)
+        self.assertEqual(details["finish_reason"], "length")
+        self.assertIn("token limit", details["validation_error"])
+        self.assertNotIn("partial private output", json.dumps(response.payload))
 
     def test_wrapper_registers_the_endpoint(self):
         root = Path(__file__).resolve().parents[1]

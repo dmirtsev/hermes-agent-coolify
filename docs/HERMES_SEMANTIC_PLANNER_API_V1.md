@@ -19,6 +19,10 @@ The planner owns:
 - selecting one to four prioritized foci;
 - recording constraints and material ambiguity.
 
+The output is deliberately compact: at most four foci, four symbols per focus,
+four constraints and two ambiguities. A rationale explains relevance of the
+symbolism; it must not become a chart interpretation.
+
 It does not own:
 
 - chart calculation or correction;
@@ -106,6 +110,8 @@ OpenRouter accounting evidence used by other direct Hermes completions:
 - provider/runtime execution failure: `502`.
 
 No failure changes the existing Hermes answer path.
+Schema errors return a bounded field-level diagnostic and finish reason. Raw
+provider output is never returned.
 
 ## Evaluation gate
 
