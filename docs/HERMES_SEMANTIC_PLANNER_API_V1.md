@@ -19,9 +19,14 @@ The planner owns:
 - selecting one to four prioritized foci;
 - recording constraints and material ambiguity.
 
-The output is deliberately compact: at most four foci, four symbols per focus,
-four constraints and two ambiguities. A rationale explains relevance of the
+The output is deliberately compact: at most four foci, three symbols per focus,
+three constraints and two ambiguities. A rationale explains relevance of the
 symbolism; it must not become a chart interpretation.
+
+Without trusted facts the planner may name a general significator, but it must
+not invent a placement, aspect type, configuration or zodiac stereotype. A
+health or death question receives at most two non-causal reflective foci and
+keeps the supplied medical-causality boundary.
 
 It does not own:
 

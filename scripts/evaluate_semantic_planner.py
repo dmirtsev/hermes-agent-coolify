@@ -7,7 +7,6 @@ import argparse
 import json
 import os
 import statistics
-import sys
 import time
 import uuid
 from typing import Any
@@ -83,6 +82,13 @@ def execute(base: str, token: str, case: tuple[str, str, list[dict[str, str]]], 
             response_body = json.loads(raw)
         except json.JSONDecodeError:
             response_body = {"error": {"message": raw[:500]}}
+    except (URLError, TimeoutError) as error:
+        status = 0
+        response_body = {
+            "error": {
+                "message": f"transport failure: {type(error).__name__}",
+            }
+        }
     elapsed_ms = round((time.perf_counter() - started) * 1_000)
     return {
         "case": case_name,
@@ -119,20 +125,25 @@ def main() -> int:
         help="Hermes base URL; may also be set with HERMES_SEMANTIC_PLANNER_URL",
     )
     parser.add_argument("--timeout", type=float, default=60.0)
+    parser.add_argument(
+        "--case",
+        action="append",
+        choices=[case[0] for case in CASES],
+        help="Run only the selected case; may be repeated",
+    )
     args = parser.parse_args()
     token = os.getenv("HERMES_API_KEY", "")
     if not args.base_url or not token:
         parser.error("--base-url/HERMES_SEMANTIC_PLANNER_URL and HERMES_API_KEY are required")
 
+    selected_cases = [
+        case for case in CASES if not args.case or case[0] in set(args.case)
+    ]
     results = []
-    try:
-        for case in CASES:
-            result = compact_result(execute(args.base_url, token, case, args.timeout))
-            results.append(result)
-            print(json.dumps(result, ensure_ascii=False, indent=2), flush=True)
-    except (URLError, TimeoutError) as error:
-        print(f"planner evaluation transport failed: {error}", file=sys.stderr)
-        return 2
+    for case in selected_cases:
+        result = compact_result(execute(args.base_url, token, case, args.timeout))
+        results.append(result)
+        print(json.dumps(result, ensure_ascii=False, indent=2), flush=True)
 
     successful = [result for result in results if result["status"] == 200]
     latencies = [result["elapsed_ms"] for result in successful]
