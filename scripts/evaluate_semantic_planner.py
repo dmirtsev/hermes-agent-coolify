@@ -129,7 +129,7 @@ def main() -> int:
         for case in CASES:
             result = compact_result(execute(args.base_url, token, case, args.timeout))
             results.append(result)
-            print(json.dumps(result, ensure_ascii=False, indent=2))
+            print(json.dumps(result, ensure_ascii=False, indent=2), flush=True)
     except (URLError, TimeoutError) as error:
         print(f"planner evaluation transport failed: {error}", file=sys.stderr)
         return 2
@@ -148,7 +148,7 @@ def main() -> int:
         "median_latency_ms": round(statistics.median(latencies)) if latencies else None,
         "median_total_tokens": round(statistics.median(token_counts)) if token_counts else None,
     }
-    print(json.dumps({"summary": summary}, ensure_ascii=False, indent=2))
+    print(json.dumps({"summary": summary}, ensure_ascii=False, indent=2), flush=True)
     return 0 if len(successful) == len(results) else 1
 
 
