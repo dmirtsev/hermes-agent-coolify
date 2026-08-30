@@ -603,6 +603,7 @@ from agent.durable_accounting import (
     seal_not_dispatched as durable_seal_not_dispatched,
 )
 from agent.design_completion import handle_design_completion
+from agent.semantic_planner import handle_semantic_plan
 from agent.versioned_methods import (
     VersionedMethodContextError,
     prepare_versioned_method_context,
@@ -820,6 +821,9 @@ replace_once(
 ''',
     '''    async def _handle_design_completions(self, request: "web.Request") -> "web.Response":
         return await handle_design_completion(self, request, web)
+
+    async def _handle_astrological_semantic_plan(self, request: "web.Request") -> "web.Response":
+        return await handle_semantic_plan(self, request, web)
 
     async def _handle_chat_completions(self, request: "web.Request") -> "web.Response":
 ''',
@@ -1143,6 +1147,10 @@ replace_once(
             )
             self._app.router.add_post("/v1/chat/completions", self._handle_chat_completions)
             self._app.router.add_post("/v1/design/completions", self._handle_design_completions)
+            self._app.router.add_post(
+                "/v1/astrology/semantic-plan",
+                self._handle_astrological_semantic_plan,
+            )
 ''',
     "durable accounting internal routes",
 )

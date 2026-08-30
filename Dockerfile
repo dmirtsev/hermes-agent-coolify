@@ -30,6 +30,7 @@ COPY hermes_gateway_launcher.sh /opt/hermes/hermes_gateway_launcher.sh
 COPY hermes_openrouter_accounting.py /opt/hermes/agent/openrouter_accounting.py
 COPY hermes_durable_accounting.py /opt/hermes/agent/durable_accounting.py
 COPY hermes_design_completion.py /opt/hermes/agent/design_completion.py
+COPY hermes_semantic_planner.py /opt/hermes/agent/semantic_planner.py
 COPY hermes_runtime_status.py /opt/hermes/agent/runtime_status_guard.py
 COPY hermes_versioned_methods.py /opt/hermes/agent/versioned_methods.py
 COPY hermes_knowledge_policy.py /opt/hermes/agent/knowledge_policy.py
