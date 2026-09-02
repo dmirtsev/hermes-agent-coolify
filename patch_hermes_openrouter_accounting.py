@@ -186,6 +186,10 @@ replace_once(
     "from agent.openrouter_accounting import (\n"
     "    record_openrouter_response,\n"
     "    record_openrouter_unresolved_attempt,\n"
+    ")\n"
+    "from agent.durable_accounting import (\n"
+    "    current_request_key,\n"
+    "    is_openrouter_resource_exhaustion,\n"
     ")\n",
     "conversation accounting import",
 )
@@ -295,6 +299,60 @@ replace_once(
                 # Stop spinner silently — retry status is buffered and
 """,
     "failed accounting attempt",
+)
+
+replace_once(
+    LOOP,
+    '''                    return {
+                        "final_response": None,
+                        "messages": messages,
+                        "api_calls": api_call_count,
+                        "completed": False,
+                        "failed": True,
+                        "error": str(api_error),
+                    }
+''',
+    '''                    if (
+                        current_request_key() is not None
+                        and is_openrouter_resource_exhaustion(api_error)
+                    ):
+                        raise api_error
+                    return {
+                        "final_response": None,
+                        "messages": messages,
+                        "api_calls": api_call_count,
+                        "completed": False,
+                        "failed": True,
+                        "error": str(api_error),
+                    }
+''',
+    "non-retryable resource exhaustion propagation",
+)
+
+replace_once(
+    LOOP,
+    '''                    return {
+                        "final_response": _final_response,
+                        "messages": messages,
+                        "api_calls": api_call_count,
+                        "completed": False,
+                        "failed": True,
+                        "error": _final_summary,
+''',
+    '''                    if (
+                        current_request_key() is not None
+                        and is_openrouter_resource_exhaustion(api_error)
+                    ):
+                        raise api_error
+                    return {
+                        "final_response": _final_response,
+                        "messages": messages,
+                        "api_calls": api_call_count,
+                        "completed": False,
+                        "failed": True,
+                        "error": _final_summary,
+''',
+    "retry-exhausted resource exhaustion propagation",
 )
 
 
@@ -592,6 +650,7 @@ from agent.durable_accounting import (
     RequestNotFoundError as DurableRequestNotFoundError,
     RequestUnresolvedError as DurableRequestUnresolvedError,
     begin_request as durable_begin_request,
+    complete_provider_rejected_unbilled as durable_complete_provider_rejected_unbilled,
     complete_request as durable_complete_request,
     durable_agent_request_scope,
     fail_request as durable_fail_request,
@@ -1015,18 +1074,37 @@ replace_once(
                     durable_complete_request(
                         idempotency_key, payload_sha256, result, usage
                     )
-                except Exception:
+                except Exception as error:
+                    terminal_result = None
                     try:
-                        durable_fail_request(
-                            idempotency_key, payload_sha256, "agent_execution_failed"
+                        terminal_result = durable_complete_provider_rejected_unbilled(
+                            idempotency_key, payload_sha256, error
                         )
                     except (DurableJournalError, sqlite3.Error, OSError):
-                        logger.exception("Durable accounting failure marker failed")
-                    logger.exception("Error running idempotent chat completion")
-                    return web.json_response(
-                        _openai_error("Internal server error", err_type="server_error"),
-                        status=500,
-                    )
+                        logger.exception(
+                            "Durable provider rejection completion failed"
+                        )
+                    if terminal_result is not None:
+                        logger.error(
+                            "OpenRouter rejected request before generation: resources exhausted"
+                        )
+                        result, usage = terminal_result
+                    else:
+                        try:
+                            durable_fail_request(
+                                idempotency_key,
+                                payload_sha256,
+                                "agent_execution_failed",
+                            )
+                        except (DurableJournalError, sqlite3.Error, OSError):
+                            logger.exception("Durable accounting failure marker failed")
+                        logger.exception("Error running idempotent chat completion")
+                        return web.json_response(
+                            _openai_error(
+                                "Internal server error", err_type="server_error"
+                            ),
+                            status=500,
+                        )
         else:
             try:
                 result, usage = await _compute_completion()
@@ -1038,6 +1116,43 @@ replace_once(
                 )
 ''',
     "durable non-streaming idempotency",
+)
+
+replace_once(
+    API_SERVER,
+    '''        final_response = result.get("final_response") or ""
+''',
+    '''        terminal_error = result.get("_hermes_terminal_error")
+        if (
+            isinstance(terminal_error, dict)
+            and terminal_error.get("code") == "provider_temporarily_unavailable"
+            and terminal_error.get("dispatch_outcome") == "provider_rejected_unbilled"
+        ):
+            response_headers = {
+                "X-Hermes-Session-Id": result.get("session_id", session_id),
+                "X-Hermes-Completed": "false",
+                "X-Hermes-Dispatch-Outcome": "provider_rejected_unbilled",
+            }
+            if durable_replayed:
+                response_headers["X-Hermes-Idempotency-Replayed"] = "true"
+            err_body = _openai_error(
+                "Гермес временно не может подготовить ответ. Средства не списаны. "
+                "Мы уже видим проблему и ведём работы. Если сбой повторяется, "
+                "сообщите в техподдержку.",
+                err_type="server_error",
+                code="provider_temporarily_unavailable",
+            )
+            err_body["error"]["hermes"] = {
+                "completed": False,
+                "partial": False,
+                "failed": True,
+                "dispatch_outcome": "provider_rejected_unbilled",
+            }
+            return web.json_response(err_body, status=503, headers=response_headers)
+
+        final_response = result.get("final_response") or ""
+''',
+    "terminal unbilled provider rejection response",
 )
 
 replace_once(
