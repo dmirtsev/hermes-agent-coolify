@@ -33,6 +33,26 @@ def _pending_generation(generation_id: str) -> dict:
     }
 
 
+class ProviderError(RuntimeError):
+    def __init__(self, status_code: int, body: dict):
+        super().__init__("provider request failed")
+        self.status_code = status_code
+        self.body = body
+
+
+def _openrouter_credit_error() -> ProviderError:
+    return ProviderError(
+        402,
+        {
+            "error": {
+                "message": "Insufficient credits",
+                "code": 402,
+                "metadata": {"limit_source": "openrouter_credits"},
+            }
+        },
+    )
+
+
 class DurableAccountingTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -82,6 +102,75 @@ class DurableAccountingTests(unittest.TestCase):
         durable.fail_request("cabinet-3", digest, "agent_execution_failed")
         with self.assertRaises(durable.RequestUnresolvedError):
             durable.begin_request("cabinet-3", digest)
+
+    def test_openrouter_credit_rejection_is_terminal_and_replayable(self):
+        key = "cabinet-provider-rejected"
+        digest = _payload("provider rejected")
+        durable.begin_request(key, digest)
+        durable.record_unresolved_evidence(
+            "provider_attempt_failed", "configured/model", request_key=key
+        )
+
+        terminal = durable.complete_provider_rejected_unbilled(
+            key, digest, _openrouter_credit_error()
+        )
+
+        self.assertIsNotNone(terminal)
+        result, usage = terminal
+        self.assertEqual(
+            result["_hermes_terminal_error"]["code"],
+            "provider_temporarily_unavailable",
+        )
+        self.assertEqual(usage["total_tokens"], 0)
+        replay = durable.begin_request(key, digest)
+        self.assertEqual(replay["state"], "completed")
+        self.assertEqual(replay["result"], result)
+        view = durable.get_request_view(key)
+        self.assertEqual(view["state"], "provider_rejected_unbilled")
+        self.assertFalse(view["terminal_outcome"]["billable"])
+        self.assertIsNone(view["accounting"])
+
+    def test_only_explicit_openrouter_credit_rejection_is_unbilled(self):
+        cases = (
+            ProviderError(
+                402,
+                {"error": {"metadata": {"limit_source": "other_limit"}}},
+            ),
+            ProviderError(
+                429,
+                {
+                    "error": {
+                        "metadata": {"limit_source": "openrouter_credits"}
+                    }
+                },
+            ),
+            TimeoutError("provider timeout"),
+        )
+        for index, error in enumerate(cases):
+            key = f"cabinet-not-credit-{index}"
+            digest = _payload(key)
+            durable.begin_request(key, digest)
+            self.assertIsNone(
+                durable.complete_provider_rejected_unbilled(key, digest, error)
+            )
+            self.assertEqual(durable.get_request_view(key)["state"], "in_flight")
+
+    def test_generation_evidence_blocks_unbilled_terminal_outcome(self):
+        key = "cabinet-credit-after-generation"
+        digest = _payload("generation exists")
+        durable.begin_request(key, digest)
+        durable.record_generation_evidence(
+            _pending_generation("gen-before-402"),
+            "configured/model",
+            request_key=key,
+        )
+
+        self.assertIsNone(
+            durable.complete_provider_rejected_unbilled(
+                key, digest, _openrouter_credit_error()
+            )
+        )
+        self.assertEqual(durable.get_request_view(key)["state"], "in_flight")
 
     def test_seal_not_dispatched_fences_a_late_http_retry(self):
         digest = _payload("never-arrived")

@@ -33,6 +33,8 @@ DEFAULT_JOURNAL_PATH = "/opt/data/hermes-accounting.sqlite3"
 DEFAULT_OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 MAX_REQUEST_KEY_LENGTH = 160
 SEALED_NOT_DISPATCHED = "sealed_not_dispatched"
+PROVIDER_TEMPORARILY_UNAVAILABLE = "provider_temporarily_unavailable"
+PROVIDER_REJECTED_UNBILLED = "provider_rejected_unbilled"
 
 _CURRENT_REQUEST_KEY: contextvars.ContextVar[str | None] = contextvars.ContextVar(
     "hermes_durable_accounting_request_key", default=None
@@ -433,6 +435,138 @@ def complete_request(
         connection.commit()
 
 
+def _provider_error_body(error: BaseException) -> dict[str, Any] | None:
+    body = getattr(error, "body", None)
+    if isinstance(body, str):
+        try:
+            body = json.loads(body)
+        except json.JSONDecodeError:
+            body = None
+    if isinstance(body, dict):
+        return body
+
+    response = getattr(error, "response", None)
+    if response is None:
+        return None
+    try:
+        body = response.json()
+    except (AttributeError, TypeError, ValueError, json.JSONDecodeError):
+        return None
+    return body if isinstance(body, dict) else None
+
+
+def is_openrouter_resource_exhaustion(error: BaseException) -> bool:
+    """Recognize only OpenRouter's explicit credit-pool rejection."""
+
+    status_code = getattr(error, "status_code", None)
+    if status_code is None:
+        status_code = getattr(getattr(error, "response", None), "status_code", None)
+    if status_code != 402:
+        return False
+
+    body = _provider_error_body(error)
+    if not isinstance(body, dict):
+        return False
+    error_payload = body.get("error", body)
+    if not isinstance(error_payload, dict):
+        return False
+    metadata = error_payload.get("metadata")
+    return (
+        isinstance(metadata, dict)
+        and metadata.get("limit_source") == "openrouter_credits"
+    )
+
+
+def complete_provider_rejected_unbilled(
+    request_key: str,
+    payload_sha256: str,
+    error: BaseException,
+) -> tuple[dict[str, Any], dict[str, Any]] | None:
+    """Persist a replayable no-charge result for a strict provider rejection.
+
+    Any generation evidence keeps the request fail-closed because a rejection
+    after a generation cannot prove that no upstream cost occurred.
+    """
+
+    if not is_openrouter_resource_exhaustion(error):
+        return None
+    request_key = normalize_request_key(request_key)
+    if not isinstance(payload_sha256, str) or len(payload_sha256) != 64:
+        raise JournalError("invalid_payload_sha256")
+
+    result = {
+        "final_response": "",
+        "completed": False,
+        "failed": True,
+        "_hermes_terminal_error": {
+            "code": PROVIDER_TEMPORARILY_UNAVAILABLE,
+            "dispatch_outcome": PROVIDER_REJECTED_UNBILLED,
+        },
+    }
+    usage = {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+        "reasoning_tokens": 0,
+    }
+
+    with contextlib.closing(_connect()) as connection:
+        connection.execute("BEGIN IMMEDIATE")
+        row = connection.execute(
+            """
+            SELECT payload_sha256, state FROM accounting_request
+            WHERE request_key = ?
+            """,
+            (request_key,),
+        ).fetchone()
+        if row is None:
+            connection.rollback()
+            raise RequestNotFoundError("request_not_found")
+        if row["payload_sha256"] != payload_sha256:
+            connection.rollback()
+            raise RequestConflictError("idempotency_payload_conflict")
+        if row["state"] != "in_flight":
+            connection.rollback()
+            raise RequestUnresolvedError("request_unresolved")
+        generation_count = connection.execute(
+            """
+            SELECT COUNT(*) FROM accounting_evidence_event
+            WHERE request_key = ? AND kind = 'generation'
+            """,
+            (request_key,),
+        ).fetchone()[0]
+        if generation_count:
+            connection.rollback()
+            return None
+
+        now = _now()
+        connection.execute(
+            """
+            UPDATE accounting_request
+            SET state = 'completed', result_json = ?, usage_json = ?,
+                accounting_json = NULL, failure_code = NULL,
+                completed_at = COALESCE(completed_at, ?), updated_at = ?,
+                configured_provider = COALESCE(configured_provider, 'openrouter'),
+                runtime_tier = COALESCE(runtime_tier, ?),
+                runtime_id = COALESCE(runtime_id, ?)
+            WHERE request_key = ?
+            """,
+            (
+                _dump(result),
+                _dump(usage),
+                now,
+                now,
+                os.getenv("HERMES_RUNTIME_TIER", "unknown").strip().lower(),
+                os.getenv("HERMES_RUNTIME_ID", "unknown").strip(),
+                request_key,
+            ),
+        )
+        connection.commit()
+    return result, usage
+
+
 def fail_request(request_key: str, payload_sha256: str, reason: str) -> None:
     request_key = normalize_request_key(request_key)
     safe_reason = str(reason or "request_failed")[:160]
@@ -812,16 +946,30 @@ def _accounting_from_events(request_key: str, row: sqlite3.Row, events: list[sql
 def _safe_request_view(request_key: str, *, include_events: bool = True) -> dict[str, Any]:
     request_key = normalize_request_key(request_key)
     row, events = _request_row_and_events(request_key)
+    stored_result = _load(row["result_json"])
+    terminal_error = (
+        stored_result.get("_hermes_terminal_error")
+        if isinstance(stored_result, dict)
+        else None
+    )
+    provider_rejected_unbilled = (
+        isinstance(terminal_error, dict)
+        and terminal_error.get("code") == PROVIDER_TEMPORARILY_UNAVAILABLE
+        and terminal_error.get("dispatch_outcome") == PROVIDER_REJECTED_UNBILLED
+    )
     accounting = _load(row["accounting_json"])
-    if not isinstance(accounting, dict):
+    if provider_rejected_unbilled:
+        accounting = None
+    elif not isinstance(accounting, dict):
         accounting = _accounting_from_events(request_key, row, events)
     result: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
         "request_key": request_key,
         "state": (
-            "not_dispatched"
-            if row["state"] == "failed"
-            and row["failure_code"] == SEALED_NOT_DISPATCHED
+            PROVIDER_REJECTED_UNBILLED
+            if provider_rejected_unbilled
+            else "not_dispatched"
+            if row["state"] == "failed" and row["failure_code"] == SEALED_NOT_DISPATCHED
             else row["state"]
         ),
         "created_at": row["created_at"],
@@ -836,6 +984,12 @@ def _safe_request_view(request_key: str, *, include_events: bool = True) -> dict
         },
         "accounting": accounting,
     }
+    if provider_rejected_unbilled:
+        result["terminal_outcome"] = {
+            "code": PROVIDER_TEMPORARILY_UNAVAILABLE,
+            "dispatch_outcome": PROVIDER_REJECTED_UNBILLED,
+            "billable": False,
+        }
     if include_events:
         result["evidence"] = {
             "generation_ids": list(
