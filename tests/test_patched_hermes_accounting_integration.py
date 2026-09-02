@@ -588,6 +588,77 @@ class PatchedHermesAccountingIntegrationTests(unittest.TestCase):
             second["hermes_accounting"]["model_execution"]["upstream_generation_ids"],
         )
 
+    def test_openrouter_credit_rejection_returns_replayable_unbilled_error(self) -> None:
+        from agent.durable_accounting import get_request_view
+        from gateway.platforms.api_server import APIServerAdapter
+
+        class OpenRouterCreditError(RuntimeError):
+            status_code = 402
+            body = {
+                "error": {
+                    "message": "Insufficient credits",
+                    "code": 402,
+                    "metadata": {"limit_source": "openrouter_credits"},
+                }
+            }
+
+        adapter = object.__new__(APIServerAdapter)
+        adapter._api_key = ""
+        adapter._model_name = "hermes-agent"
+        adapter._check_auth = lambda request: None
+        calls = {"count": 0}
+
+        async def run_agent(**kwargs):
+            calls["count"] += 1
+            raise OpenRouterCreditError("provider request rejected")
+
+        adapter._run_agent = run_agent
+
+        class Request:
+            headers = {"Idempotency-Key": "credit-rejection-replay-test"}
+
+            async def json(self):
+                return {
+                    "model": "hermes-agent",
+                    "messages": [{"role": "user", "content": "test"}],
+                    "stream": False,
+                }
+
+        with tempfile.TemporaryDirectory() as directory, patch.dict(
+            os.environ,
+            {
+                "HERMES_ACCOUNTING_JOURNAL_PATH": str(
+                    Path(directory) / "journal.sqlite3"
+                ),
+                "HERMES_RUNTIME_TIER": "economy",
+                "HERMES_RUNTIME_ID": "hermes-test-economy",
+            },
+            clear=False,
+        ):
+            first_response = asyncio.run(adapter._handle_chat_completions(Request()))
+            second_response = asyncio.run(adapter._handle_chat_completions(Request()))
+            view = get_request_view("credit-rejection-replay-test")
+
+        first = json.loads(first_response.text)
+        second = json.loads(second_response.text)
+        self.assertEqual(first_response.status, 503)
+        self.assertEqual(second_response.status, 503)
+        self.assertEqual(calls["count"], 1)
+        self.assertEqual(
+            first["error"]["code"], "provider_temporarily_unavailable"
+        )
+        self.assertEqual(
+            first["error"]["hermes"]["dispatch_outcome"],
+            "provider_rejected_unbilled",
+        )
+        self.assertNotIn("Insufficient credits", json.dumps(first))
+        self.assertEqual(first["error"], second["error"])
+        self.assertEqual(
+            second_response.headers["X-Hermes-Idempotency-Replayed"], "true"
+        )
+        self.assertEqual(view["state"], "provider_rejected_unbilled")
+        self.assertFalse(view["terminal_outcome"]["billable"])
+
     def test_non_streaming_responses_api_exposes_same_accounting_contract(self) -> None:
         from agent.openrouter_accounting import build_openrouter_accounting, record_openrouter_response
         from gateway.platforms.api_server import APIServerAdapter
