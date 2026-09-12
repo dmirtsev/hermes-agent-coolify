@@ -24,6 +24,7 @@ WORKDIR /opt/data
 
 COPY tp_knowledge_mcp_setup.sh /opt/hermes/tp_knowledge_mcp_setup.sh
 COPY hermes_fixed_model_setup.sh /opt/hermes/hermes_fixed_model_setup.sh
+COPY hermes_curator_setup.sh /opt/hermes/hermes_curator_setup.sh
 COPY hermes_release_evidence.sh /opt/hermes/hermes_release_evidence.sh
 COPY hermes_main_wrapper.sh /opt/hermes/hermes_main_wrapper.sh
 COPY hermes_gateway_launcher.sh /opt/hermes/hermes_gateway_launcher.sh
@@ -36,14 +37,17 @@ COPY patch_hermes_health.py /opt/hermes-wrapper/patch_hermes_health.py
 COPY patch_hermes_openrouter_accounting.py /opt/hermes-wrapper/patch_hermes_openrouter_accounting.py
 COPY patch_hermes_runtime_status.py /opt/hermes-wrapper/patch_hermes_runtime_status.py
 COPY patch_hermes_container_boot.py /opt/hermes-wrapper/patch_hermes_container_boot.py
+COPY patch_hermes_curator_guard.py /opt/hermes-wrapper/patch_hermes_curator_guard.py
 RUN chmod +x /opt/hermes/tp_knowledge_mcp_setup.sh && \
     chmod +x /opt/hermes/hermes_fixed_model_setup.sh && \
+    chmod +x /opt/hermes/hermes_curator_setup.sh && \
     chmod +x /opt/hermes/hermes_release_evidence.sh && \
     chmod +x /opt/hermes/hermes_main_wrapper.sh && \
     chmod +x /opt/hermes/hermes_gateway_launcher.sh && \
     /opt/hermes/.venv/bin/python /opt/hermes-wrapper/patch_hermes_health.py && \
     /opt/hermes/.venv/bin/python /opt/hermes-wrapper/patch_hermes_runtime_status.py && \
     /opt/hermes/.venv/bin/python /opt/hermes-wrapper/patch_hermes_container_boot.py && \
+    /opt/hermes/.venv/bin/python /opt/hermes-wrapper/patch_hermes_curator_guard.py && \
     /opt/hermes/.venv/bin/python /opt/hermes-wrapper/patch_hermes_openrouter_accounting.py && \
     rm -f /etc/s6-overlay/s6-rc.d/user/contents.d/dashboard && \
     printf '%s\n' \
@@ -59,6 +63,12 @@ RUN chmod +x /opt/hermes/tp_knowledge_mcp_setup.sh && \
       'exec /opt/hermes/hermes_fixed_model_setup.sh' \
       > /etc/cont-init.d/02-hermes-fixed-model && \
     chmod +x /etc/cont-init.d/02-hermes-fixed-model
+RUN printf '%s\n' \
+      '#!/command/with-contenv sh' \
+      'set -eu' \
+      'exec /opt/hermes/hermes_curator_setup.sh' \
+      > /etc/cont-init.d/03-hermes-curator && \
+    chmod +x /etc/cont-init.d/03-hermes-curator
 
 ENTRYPOINT ["/init", "/opt/hermes/hermes_main_wrapper.sh"]
 # Run one foreground gateway; the patched reconciler registers the s6 slot but

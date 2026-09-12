@@ -108,22 +108,68 @@ class HermesTierContractTests(unittest.TestCase):
             )
             setup = self.run_command("sh", "hermes_fixed_model_setup.sh", env=env)
             self.assertEqual(setup.returncode, 0, setup.stderr)
+            curator_setup = self.run_command(
+                "sh", "hermes_curator_setup.sh", env=env
+            )
+            self.assertEqual(curator_setup.returncode, 0, curator_setup.stderr)
             written = yaml.safe_load(config.read_text(encoding="utf-8"))
             self.assertEqual(written["unrelated"], {"keep": True})
             self.assertEqual(written["model"]["default"], "example/balanced-model")
             self.assertEqual(written["model"]["max_tokens"], 4096)
+            self.assertEqual(
+                written["auxiliary"]["curator"]["model"],
+                "deepseek/deepseek-v4-flash",
+            )
+            self.assertFalse(written["curator"]["enabled"])
+            self.assertFalse(written["curator"]["prune_builtins"])
 
             evidence = self.run_command("sh", "hermes_release_evidence.sh", env=env)
             self.assertEqual(evidence.returncode, 0, evidence.stderr)
             payload = json.loads((home / "release.json").read_text(encoding="utf-8"))
             self.assertEqual(payload["routing"]["model"], "example/balanced-model")
             self.assertTrue(payload["routing"]["fixed_model_validated"])
+            self.assertEqual(
+                payload["curator"],
+                {
+                    "enabled": False,
+                    "provider": "openrouter",
+                    "model": "deepseek/deepseek-v4-flash",
+                    "interval_hours": 168,
+                    "max_iterations": 12,
+                    "prune_builtins": False,
+                    "policy_validated": True,
+                },
+            )
 
             written["model"]["default"] = "example/wrong-model"
             config.write_text(yaml.safe_dump(written), encoding="utf-8")
             mismatch = self.run_command("sh", "hermes_release_evidence.sh", env=env)
             self.assertNotEqual(mismatch.returncode, 0)
             self.assertIn("fixed model mismatch", mismatch.stderr)
+
+    def test_curator_patch_replaces_unbounded_iteration_limit(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            source_path = Path(temp_dir) / "curator.py"
+            source_path.write_text(
+                "import os\nfrom typing import Any, Dict\n\n"
+                "def _run_llm_review(prompt: str) -> Dict[str, Any]:\n"
+                "    review_agent = AIAgent(\n"
+                "            max_iterations=9999,\n"
+                "    )\n",
+                encoding="utf-8",
+            )
+            env = os.environ.copy()
+            env["HERMES_CURATOR_SOURCE_PATH"] = str(source_path)
+            result = self.run_command(
+                "python3", "patch_hermes_curator_guard.py", env=env
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            patched = source_path.read_text(encoding="utf-8")
+            self.assertNotIn("max_iterations=9999", patched)
+            self.assertIn(
+                "max_iterations=_server_curator_max_iterations()", patched
+            )
+            self.assertIn("1 <= value <= 25", patched)
 
 
 if __name__ == "__main__":
