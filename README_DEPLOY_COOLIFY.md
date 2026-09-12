@@ -180,6 +180,11 @@ model picker.
 
 ## Three fixed model tiers
 
+Server Curator is governed separately from user tier routing. It is disabled
+by default and, if explicitly enabled for an isolated test, is pinned to the
+Economy model with a bounded iteration count. See
+[`docs/HERMES_CURATOR_SERVER_POLICY.md`](docs/HERMES_CURATOR_SERVER_POLICY.md).
+
 For multi-user model choice, do not use `HERMES_MODEL` and do not trust the
 OpenAI-compatible request `model` field. The safe Sprint 1 deployment contract
 is three isolated Hermes applications (`economy`, `balanced`, `strong`), each
