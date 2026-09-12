@@ -54,7 +54,8 @@ def fixed_model_evidence() -> dict:
         raise SystemExit("[hermes-release] incomplete fixed model contract")
 
     config_path = Path(
-        os.environ.get("HERMES_FIXED_MODEL_CONFIG_PATH")
+        os.environ.get("HERMES_CURATOR_CONFIG_PATH")
+        or os.environ.get("HERMES_FIXED_MODEL_CONFIG_PATH")
         or Path(os.environ.get("HERMES_HOME", "/opt/data")) / "config.yaml"
     )
     try:
@@ -85,6 +86,58 @@ def fixed_model_evidence() -> dict:
     }
 
 
+def curator_evidence() -> dict:
+    config_path = Path(
+        os.environ.get("HERMES_FIXED_MODEL_CONFIG_PATH")
+        or Path(os.environ.get("HERMES_HOME", "/opt/data")) / "config.yaml"
+    )
+    try:
+        config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+        curator = config["curator"]
+        slot = config["auxiliary"]["curator"]
+        enabled = bool(curator["enabled"])
+        interval_hours = int(curator["interval_hours"])
+        prune_builtins = bool(curator["prune_builtins"])
+        provider = str(slot["provider"]).strip()
+        model = str(slot["model"]).strip()
+    except Exception as exc:
+        raise SystemExit(f"[hermes-release] cannot read Curator config: {exc}") from exc
+
+    expected_enabled = str(
+        os.environ.get("HERMES_CURATOR_ENABLED", "false")
+    ).strip().lower() in {"1", "true", "yes", "on"}
+    expected_model = str(
+        os.environ.get("HERMES_CURATOR_MODEL_DEFAULT")
+        or "deepseek/deepseek-v4-flash"
+    ).strip()
+    expected_interval = int(os.environ.get("HERMES_CURATOR_INTERVAL_HOURS", "168"))
+    max_iterations = int(os.environ.get("HERMES_CURATOR_MAX_ITERATIONS", "12"))
+    if not 1 <= max_iterations <= 25:
+        raise SystemExit("[hermes-release] invalid Curator max_iterations")
+    actual = (enabled, interval_hours, prune_builtins, provider, model)
+    expected = (
+        expected_enabled,
+        expected_interval,
+        False,
+        "openrouter",
+        expected_model,
+    )
+    if actual != expected:
+        raise SystemExit(
+            "[hermes-release] Curator policy mismatch: "
+            f"expected={expected} actual={actual}"
+        )
+    return {
+        "enabled": enabled,
+        "provider": provider,
+        "model": model,
+        "interval_hours": interval_hours,
+        "max_iterations": max_iterations,
+        "prune_builtins": prune_builtins,
+        "policy_validated": True,
+    }
+
+
 path = Path(os.environ["HERMES_RELEASE_EVIDENCE_PATH"])
 wrapper_commit = clean("HERMES_WRAPPER_COMMIT")
 if wrapper_commit == "unknown":
@@ -107,6 +160,7 @@ evidence = {
     "upstream_image_digest": clean("HERMES_UPSTREAM_IMAGE_DIGEST"),
     "runtime_started_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
     "routing": fixed_model_evidence(),
+    "curator": curator_evidence(),
 }
 
 path.parent.mkdir(parents=True, exist_ok=True)
