@@ -128,6 +128,38 @@ class PatchedHermesAccountingIntegrationTests(unittest.TestCase):
         self.assertNotIn("FORBIDDEN-HISTORY-SENTINEL", call["ephemeral_system_prompt"])
         self.assertEqual(response.headers["X-Hermes-Context-Isolation"], "strict-v1")
 
+    def test_sourced_text_handler_uses_isolated_tool_free_execution(self) -> None:
+        from gateway.platforms.api_server import APIServerAdapter
+
+        class Request:
+            headers = {"Authorization": "Bearer gateway-token"}
+
+            async def json(self):
+                return {
+                    "tp_execution_mode": "sourced_text_v1",
+                    "messages": [
+                        {"role": "system", "content": "Extract sourced JSON"},
+                        {"role": "user", "content": "Supplied article"},
+                    ],
+                }
+
+        adapter = object.__new__(APIServerAdapter)
+        adapter._api_key = "gateway-token"
+        adapter._model_name = "test/model"
+        adapter._run_agent = AsyncMock(return_value=(
+            {"final_response": "{}", "completed": True},
+            {"input_tokens": 1, "output_tokens": 1, "total_tokens": 2},
+        ))
+        response = asyncio.run(adapter._handle_chat_completions(Request()))
+        self.assertEqual(response.status, 200)
+        call = adapter._run_agent.await_args.kwargs
+        self.assertEqual(call["conversation_history"], [])
+        self.assertTrue(call["session_id"].startswith("tp-sourced-"))
+        self.assertTrue(call["strict_context_only"])
+        self.assertTrue(call["sourced_text_only"])
+        self.assertEqual(call["ephemeral_system_prompt"], "Extract sourced JSON")
+        self.assertEqual(response.headers["X-Hermes-Context-Isolation"], "strict-v1")
+
     def test_transport_retains_upstream_evidence_and_enables_routing_metadata(self) -> None:
         from agent.transports.chat_completions import ChatCompletionsTransport
 

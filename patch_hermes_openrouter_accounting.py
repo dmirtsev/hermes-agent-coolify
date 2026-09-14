@@ -662,6 +662,7 @@ from agent.durable_accounting import (
     seal_not_dispatched as durable_seal_not_dispatched,
 )
 from agent.design_completion import handle_design_completion
+from agent.sourced_text import sourced_text_mode
 from agent.versioned_methods import (
     VersionedMethodContextError,
     prepare_versioned_method_context,
@@ -743,6 +744,13 @@ replace_once(
                 status=400,
             )
 
+        try:
+            strict_sourced_text = sourced_text_mode(body)
+        except ValueError as exc:
+            return web.json_response(
+                _openai_error(str(exc), code="invalid_sourced_text"), status=400,
+            )
+
         messages = body.get("messages")
 ''',
     "versioned method request guard",
@@ -755,7 +763,7 @@ replace_once(
         # Extract system message (becomes ephemeral system prompt layered ON TOP of core)
 ''',
     '''        stream = _coerce_request_bool(body.get("stream"), default=False)
-        if stream and versioned_method_guard is not None:
+        if stream and (versioned_method_guard is not None or strict_sourced_text):
             return web.json_response(
                 _openai_error(
                     "Versioned astrology readings require a non-streaming evidence receipt",
@@ -798,7 +806,7 @@ replace_once(
     '''        if conversation_messages:
             user_message = conversation_messages[-1].get("content", "")
             history = conversation_messages[:-1]
-        if versioned_method_guard is not None:
+        if versioned_method_guard is not None or strict_sourced_text:
             history = []
 
         if not _content_has_visible_payload(user_message):
@@ -818,7 +826,7 @@ replace_once(
         if key_err is not None:
             return key_err
 
-        if versioned_method_guard is not None and (
+        if (versioned_method_guard is not None or strict_sourced_text) and (
             gateway_session_key or request.headers.get("X-Hermes-Session-Id", "").strip()
         ):
             return web.json_response(
@@ -842,6 +850,8 @@ replace_once(
     '''        provided_session_id = request.headers.get("X-Hermes-Session-Id", "").strip()
         if versioned_method_guard is not None:
             session_id = versioned_method_guard.isolated_session_id
+        elif strict_sourced_text:
+            session_id = "tp-sourced-" + uuid.uuid4().hex
         elif provided_session_id:
 ''',
     "strict context isolated session identity",
@@ -990,7 +1000,8 @@ replace_once(
                 session_id=session_id,
                 gateway_session_key=gateway_session_key,
                 accounting_request_key=idempotency_key,
-                strict_context_only=versioned_method_guard is not None,
+                strict_context_only=versioned_method_guard is not None or strict_sourced_text,
+                sourced_text_only=strict_sourced_text,
             )
 
         if idempotency_key:
@@ -1157,7 +1168,7 @@ replace_once(
             response_headers["X-Hermes-Session-Key"] = gateway_session_key
         if durable_replayed:
             response_headers["X-Hermes-Idempotency-Replayed"] = "true"
-        if versioned_method_guard is not None:
+        if versioned_method_guard is not None or strict_sourced_text:
             response_headers["X-Hermes-Context-Isolation"] = "strict-v1"
 
         # Hard-fail path: no usable assistant text AND a real failure → 5xx
@@ -1173,6 +1184,7 @@ replace_once(
     '''        gateway_session_key: Optional[str] = None,
         accounting_request_key: Optional[str] = None,
         strict_context_only: bool = False,
+        sourced_text_only: bool = False,
     ) -> tuple:
 ''',
     "durable request key execution argument",
@@ -1202,6 +1214,8 @@ replace_once(
                     gateway_session_key=gateway_session_key,
                     strict_context_only=strict_context_only,
                 )
+            if sourced_text_only:
+                agent.max_tokens = 2200
             if agent_ref is not None:
 ''',
     "strict context agent execution boundary",
