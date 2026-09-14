@@ -14,6 +14,9 @@ class SourcedTextTests(unittest.TestCase):
 
     def test_accepts_bounded_plain_text(self):
         self.assertTrue(sourced_text_mode(self.body()))
+        body = self.body()
+        body["messages"][1]["content"] = "x" * 160000
+        self.assertTrue(sourced_text_mode(body))
 
     def test_rejects_tools_stream_history_and_oversized_content(self):
         for change in ({"tools": [{"name": "terminal"}]}, {"stream": True},
@@ -21,7 +24,7 @@ class SourcedTextTests(unittest.TestCase):
                        {"tp_execution_mode": "unknown"},
                        {"messages": [{"role": "user", "content": "x"}]},
                        {"messages": [{"role": "system", "content": "x"},
-                                     {"role": "user", "content": "x" * 28000}]}):
+                                     {"role": "user", "content": "x" * 200000}]}):
             with self.subTest(change=tuple(change)):
                 with self.assertRaises(ValueError):
                     sourced_text_mode({**self.body(), **change})

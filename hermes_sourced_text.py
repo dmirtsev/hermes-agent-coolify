@@ -19,6 +19,6 @@ def sourced_text_mode(body):
             raise ValueError("Sourced text forbids conversation history")
         if not isinstance(item.get("content"), str) or not item["content"].strip():
             raise ValueError("Sourced text requires plain text")
-    if sum(len(item["content"]) for item in messages) > 28000:
-        raise ValueError("Sourced text exceeds 28000 characters")
+    if sum(len(item["content"]) for item in messages) > 200000:
+        raise ValueError("Sourced text exceeds 200000 characters")
     return True

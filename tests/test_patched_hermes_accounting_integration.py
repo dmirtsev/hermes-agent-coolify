@@ -166,7 +166,7 @@ class PatchedHermesAccountingIntegrationTests(unittest.TestCase):
         agent = SimpleNamespace(provider="openrouter", model="test/model",
                                 base_url="https://openrouter.ai/api/v1")
         def run_conversation(**kwargs):
-            self.assertEqual(agent.max_tokens, 4000)
+            self.assertEqual(agent.max_tokens, 12000)
             self.assertEqual(agent.reasoning_config, {"enabled": False})
             return {"final_response": "{}", "completed": True}
         agent.run_conversation = run_conversation

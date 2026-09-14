@@ -1215,7 +1215,7 @@ replace_once(
                     strict_context_only=strict_context_only,
                 )
             if sourced_text_only:
-                agent.max_tokens = 4000
+                agent.max_tokens = 12000
                 agent.reasoning_config = {"enabled": False}
             if agent_ref is not None:
 ''',
