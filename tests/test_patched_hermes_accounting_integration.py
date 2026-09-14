@@ -160,6 +160,24 @@ class PatchedHermesAccountingIntegrationTests(unittest.TestCase):
         self.assertEqual(call["ephemeral_system_prompt"], "Extract sourced JSON")
         self.assertEqual(response.headers["X-Hermes-Context-Isolation"], "strict-v1")
 
+    def test_sourced_execution_reserves_output_for_json_not_reasoning(self) -> None:
+        from gateway.platforms.api_server import APIServerAdapter
+
+        agent = SimpleNamespace(provider="openrouter", model="test/model",
+                                base_url="https://openrouter.ai/api/v1")
+        def run_conversation(**kwargs):
+            self.assertEqual(agent.max_tokens, 4000)
+            self.assertEqual(agent.reasoning_config, {"enabled": False})
+            return {"final_response": "{}", "completed": True}
+        agent.run_conversation = run_conversation
+        adapter = object.__new__(APIServerAdapter)
+        adapter._create_agent = lambda **kwargs: agent
+        result, _ = asyncio.run(adapter._run_agent(
+            user_message="Article", conversation_history=[],
+            strict_context_only=True, sourced_text_only=True,
+        ))
+        self.assertEqual(result["final_response"], "{}")
+
     def test_transport_retains_upstream_evidence_and_enables_routing_metadata(self) -> None:
         from agent.transports.chat_completions import ChatCompletionsTransport
 
