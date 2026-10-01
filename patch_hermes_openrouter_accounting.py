@@ -747,6 +747,10 @@ replace_once(
         try:
             strict_execution_mode = strict_context_execution_mode(body)
             strict_sourced_text = strict_execution_mode == "sourced_text_v1"
+            strict_facts_json = (
+                strict_execution_mode == "interpretation_facts_v1"
+                and body.get("tp_answer_format") == "core_statements_v1"
+            )
             strict_execution_context = strict_execution_mode is not None
         except ValueError as exc:
             return web.json_response(
@@ -1005,6 +1009,7 @@ replace_once(
                 accounting_request_key=idempotency_key,
                 strict_context_only=versioned_method_guard is not None or strict_execution_context,
                 sourced_text_only=strict_sourced_text,
+                facts_json_only=strict_facts_json,
             )
 
         if idempotency_key:
@@ -1188,6 +1193,7 @@ replace_once(
         accounting_request_key: Optional[str] = None,
         strict_context_only: bool = False,
         sourced_text_only: bool = False,
+        facts_json_only: bool = False,
     ) -> tuple:
 ''',
     "durable request key execution argument",
@@ -1219,6 +1225,7 @@ replace_once(
                 )
             if sourced_text_only:
                 agent.max_tokens = 12000
+            if sourced_text_only or facts_json_only:
                 agent.reasoning_config = {"enabled": False}
             if agent_ref is not None:
 ''',

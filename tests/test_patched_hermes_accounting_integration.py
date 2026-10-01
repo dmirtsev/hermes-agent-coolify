@@ -157,6 +157,7 @@ class PatchedHermesAccountingIntegrationTests(unittest.TestCase):
         self.assertTrue(call["session_id"].startswith("tp-sourced-"))
         self.assertTrue(call["strict_context_only"])
         self.assertTrue(call["sourced_text_only"])
+        self.assertFalse(call["facts_json_only"])
         self.assertEqual(call["ephemeral_system_prompt"], "Extract sourced JSON")
         self.assertEqual(response.headers["X-Hermes-Context-Isolation"], "strict-v1")
 
@@ -165,10 +166,16 @@ class PatchedHermesAccountingIntegrationTests(unittest.TestCase):
 
         class Request:
             headers = {"Authorization": "Bearer gateway-token"}
+            def __init__(self, answer_format="core_statements_v1"):
+                self.answer_format = answer_format
             async def json(self):
-                return {"tp_execution_mode": "interpretation_facts_v1", "tools": [], "tool_choice": "none",
+                body = {"tp_execution_mode": "interpretation_facts_v1",
+                        "tools": [], "tool_choice": "none",
                         "messages": [{"role": "system", "content": "Use current facts"},
                                      {"role": "user", "content": "Supplied current facts"}]}
+                if self.answer_format is not None:
+                    body["tp_answer_format"] = self.answer_format
+                return body
 
         adapter = object.__new__(APIServerAdapter)
         adapter._api_key = "gateway-token"
@@ -184,6 +191,7 @@ class PatchedHermesAccountingIntegrationTests(unittest.TestCase):
         self.assertTrue(call["session_id"].startswith("tp-interpretation-facts-"))
         self.assertTrue(call["strict_context_only"])
         self.assertFalse(call["sourced_text_only"])
+        self.assertTrue(call["facts_json_only"])
         self.assertEqual(call["ephemeral_system_prompt"], "Use current facts")
         self.assertEqual(response.headers["X-Hermes-Context-Isolation"], "strict-v1")
         adapter._run_agent.assert_awaited_once()
@@ -193,6 +201,9 @@ class PatchedHermesAccountingIntegrationTests(unittest.TestCase):
             blocked = asyncio.run(adapter._handle_chat_completions(request))
             self.assertEqual(blocked.status, 400)
         adapter._run_agent.assert_awaited_once()
+        without_marker = asyncio.run(adapter._handle_chat_completions(Request(None)))
+        self.assertEqual(without_marker.status, 200)
+        self.assertFalse(adapter._run_agent.await_args.kwargs["facts_json_only"])
 
     def test_interpretation_execution_retains_reasoning_and_output_budget(self) -> None:
         from gateway.platforms.api_server import APIServerAdapter
@@ -208,8 +219,29 @@ class PatchedHermesAccountingIntegrationTests(unittest.TestCase):
         adapter = object.__new__(APIServerAdapter)
         adapter._create_agent = lambda **kwargs: agent
         result, _ = asyncio.run(adapter._run_agent(user_message="Facts", conversation_history=[],
-                                                  strict_context_only=True, sourced_text_only=False))
+                                                  strict_context_only=True, sourced_text_only=False,
+                                                  facts_json_only=False))
         self.assertEqual(result["final_response"], "verified answer")
+
+    def test_structured_facts_disable_reasoning_without_changing_output_budget(self) -> None:
+        from gateway.platforms.api_server import APIServerAdapter
+        agent = SimpleNamespace(provider="openrouter", model="test/model",
+                                base_url="https://openrouter.ai/api/v1",
+                                max_tokens=4096,
+                                reasoning_config={"enabled": True, "effort": "high"})
+        def run_conversation(**kwargs):
+            self.assertEqual(agent.max_tokens, 4096)
+            self.assertEqual(agent.reasoning_config, {"enabled": False})
+            return {"final_response": '{"mode":"facts","items":[]}', "completed": True}
+        agent.run_conversation = run_conversation
+        adapter = object.__new__(APIServerAdapter)
+        adapter._create_agent = lambda **kwargs: agent
+        result, _ = asyncio.run(adapter._run_agent(
+            user_message="Facts", conversation_history=[],
+            strict_context_only=True, sourced_text_only=False,
+            facts_json_only=True,
+        ))
+        self.assertEqual(result["final_response"], '{"mode":"facts","items":[]}')
 
     def test_sourced_execution_reserves_output_for_json_not_reasoning(self) -> None:
         from gateway.platforms.api_server import APIServerAdapter
@@ -226,6 +258,7 @@ class PatchedHermesAccountingIntegrationTests(unittest.TestCase):
         result, _ = asyncio.run(adapter._run_agent(
             user_message="Article", conversation_history=[],
             strict_context_only=True, sourced_text_only=True,
+            facts_json_only=False,
         ))
         self.assertEqual(result["final_response"], "{}")
 
