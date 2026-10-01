@@ -160,6 +160,57 @@ class PatchedHermesAccountingIntegrationTests(unittest.TestCase):
         self.assertEqual(call["ephemeral_system_prompt"], "Extract sourced JSON")
         self.assertEqual(response.headers["X-Hermes-Context-Isolation"], "strict-v1")
 
+    def test_interpretation_handler_preserves_tier_execution_and_isolates_context(self) -> None:
+        from gateway.platforms.api_server import APIServerAdapter
+
+        class Request:
+            headers = {"Authorization": "Bearer gateway-token"}
+            async def json(self):
+                return {"tp_execution_mode": "interpretation_facts_v1", "tools": [], "tool_choice": "none",
+                        "messages": [{"role": "system", "content": "Use current facts"},
+                                     {"role": "user", "content": "Supplied current facts"}]}
+
+        adapter = object.__new__(APIServerAdapter)
+        adapter._api_key = "gateway-token"
+        adapter._model_name = "test/model"
+        adapter._run_agent = AsyncMock(return_value=(
+            {"final_response": "verified answer", "completed": True},
+            {"input_tokens": 1, "output_tokens": 1, "total_tokens": 2},
+        ))
+        response = asyncio.run(adapter._handle_chat_completions(Request()))
+        self.assertEqual(response.status, 200)
+        call = adapter._run_agent.await_args.kwargs
+        self.assertEqual(call["conversation_history"], [])
+        self.assertTrue(call["session_id"].startswith("tp-interpretation-facts-"))
+        self.assertTrue(call["strict_context_only"])
+        self.assertFalse(call["sourced_text_only"])
+        self.assertEqual(call["ephemeral_system_prompt"], "Use current facts")
+        self.assertEqual(response.headers["X-Hermes-Context-Isolation"], "strict-v1")
+        adapter._run_agent.assert_awaited_once()
+        for headers in ({"X-Hermes-Session-Id": "shared"}, {"X-Hermes-Session-Key": "shared"}):
+            request = Request()
+            request.headers = {**Request.headers, **headers}
+            blocked = asyncio.run(adapter._handle_chat_completions(request))
+            self.assertEqual(blocked.status, 400)
+        adapter._run_agent.assert_awaited_once()
+
+    def test_interpretation_execution_retains_reasoning_and_output_budget(self) -> None:
+        from gateway.platforms.api_server import APIServerAdapter
+        reasoning = {"enabled": True, "effort": "high"}
+        agent = SimpleNamespace(provider="openrouter", model="test/model",
+                                base_url="https://openrouter.ai/api/v1",
+                                max_tokens=17000, reasoning_config=reasoning)
+        def run_conversation(**kwargs):
+            self.assertEqual(agent.max_tokens, 17000)
+            self.assertEqual(agent.reasoning_config, reasoning)
+            return {"final_response": "verified answer", "completed": True}
+        agent.run_conversation = run_conversation
+        adapter = object.__new__(APIServerAdapter)
+        adapter._create_agent = lambda **kwargs: agent
+        result, _ = asyncio.run(adapter._run_agent(user_message="Facts", conversation_history=[],
+                                                  strict_context_only=True, sourced_text_only=False))
+        self.assertEqual(result["final_response"], "verified answer")
+
     def test_sourced_execution_reserves_output_for_json_not_reasoning(self) -> None:
         from gateway.platforms.api_server import APIServerAdapter
 
