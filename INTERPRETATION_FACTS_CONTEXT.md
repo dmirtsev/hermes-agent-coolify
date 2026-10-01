@@ -10,9 +10,7 @@ system и user; максимум 128 KiB UTF-8 суммарно. Запреще�
 tools и plugin hooks/middleware. Ответ содержит
 `X-Hermes-Context-Isolation: strict-v1`. Cabinet обязан проверить этот заголовок.
 
-Сам `interpretation_facts_v1` не меняет reasoning и `max_tokens`. Если Cabinet
-дополнительно передаёт `tp_answer_format: core_statements_v1`, wrapper отключает
-reasoning для короткого JSON со ссылками, сохраняя tier `max_tokens` без изменений.
+В отличие от `sourced_text_v1`, новый режим не меняет reasoning и max_tokens.
 Модель, провайдер, accounting и идемпотентность остаются в существующем контуре.
 Астрологические правила и проверка происхождения пакета принадлежат Core/Cabinet;
 wrapper обеспечивает только изоляцию исполнения.
