@@ -34,11 +34,13 @@ COPY hermes_design_completion.py /opt/hermes/agent/design_completion.py
 COPY hermes_runtime_status.py /opt/hermes/agent/runtime_status_guard.py
 COPY hermes_versioned_methods.py /opt/hermes/agent/versioned_methods.py
 COPY hermes_sourced_text.py /opt/hermes/agent/sourced_text.py
+COPY hermes_dialogue_models.py /opt/hermes/agent/dialogue_models.py
 COPY patch_hermes_health.py /opt/hermes-wrapper/patch_hermes_health.py
 COPY patch_hermes_openrouter_accounting.py /opt/hermes-wrapper/patch_hermes_openrouter_accounting.py
 COPY patch_hermes_runtime_status.py /opt/hermes-wrapper/patch_hermes_runtime_status.py
 COPY patch_hermes_container_boot.py /opt/hermes-wrapper/patch_hermes_container_boot.py
 COPY patch_hermes_curator_guard.py /opt/hermes-wrapper/patch_hermes_curator_guard.py
+COPY patch_hermes_dialogue_models.py /opt/hermes-wrapper/patch_hermes_dialogue_models.py
 RUN chmod +x /opt/hermes/tp_knowledge_mcp_setup.sh && \
     chmod +x /opt/hermes/hermes_fixed_model_setup.sh && \
     chmod +x /opt/hermes/hermes_curator_setup.sh && \
@@ -50,6 +52,7 @@ RUN chmod +x /opt/hermes/tp_knowledge_mcp_setup.sh && \
     /opt/hermes/.venv/bin/python /opt/hermes-wrapper/patch_hermes_container_boot.py && \
     /opt/hermes/.venv/bin/python /opt/hermes-wrapper/patch_hermes_curator_guard.py && \
     /opt/hermes/.venv/bin/python /opt/hermes-wrapper/patch_hermes_openrouter_accounting.py && \
+    /opt/hermes/.venv/bin/python /opt/hermes-wrapper/patch_hermes_dialogue_models.py && \
     rm -f /etc/s6-overlay/s6-rc.d/user/contents.d/dashboard && \
     printf '%s\n' \
       '#!/command/with-contenv sh' \
