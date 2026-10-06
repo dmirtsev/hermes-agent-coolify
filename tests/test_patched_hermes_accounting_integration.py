@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import contextvars
 import json
+import hashlib
 import os
 import sys
 import tempfile
@@ -210,6 +211,78 @@ class PatchedHermesAccountingIntegrationTests(unittest.TestCase):
         result, _ = asyncio.run(adapter._run_agent(user_message="Facts", conversation_history=[],
                                                   strict_context_only=True, sourced_text_only=False))
         self.assertEqual(result["final_response"], "verified answer")
+
+    def test_managed_policy_handler_returns_receipt_and_passes_replacement(self) -> None:
+        from gateway.platforms.api_server import APIServerAdapter
+        prompt = "Published policy: explain the supplied data naturally."
+        policy = {"version_id": "version-7", "version": 7, "sha256": "a" * 64,
+                  "system_sha256": hashlib.sha256(prompt.encode()).hexdigest()}
+        body = {"stream": False, "tp_execution_mode": "interpretation_facts_v1",
+                "tp_answer_format": "hermes_managed_v1", "tp_hermes_policy": policy,
+                "tools": [], "tool_choice": "none",
+                "messages": [{"role": "system", "content": prompt},
+                             {"role": "user", "content": "Current chart and history"}]}
+
+        class Request:
+            headers = {"Authorization": "Bearer gateway-token", "Idempotency-Key": "managed-request"}
+            async def json(self):
+                return body
+
+        adapter = object.__new__(APIServerAdapter)
+        adapter._api_key, adapter._model_name = "gateway-token", "test/model"
+        adapter._run_agent = AsyncMock(return_value=(
+            {"final_response": "Short natural response.", "completed": True},
+            {"input_tokens": 1, "output_tokens": 1, "total_tokens": 2}))
+        with patch("gateway.platforms.api_server.durable_begin_request", return_value={"state": "received"}), \
+             patch("gateway.platforms.api_server.durable_complete_request"):
+            response = asyncio.run(adapter._handle_chat_completions(Request()))
+        self.assertEqual(response.status, 200)
+        self.assertEqual(response.headers["X-Hermes-Policy-Id"], policy["version_id"])
+        self.assertEqual(response.headers["X-Hermes-Policy-Sha256"], policy["sha256"])
+        self.assertEqual(adapter._run_agent.await_args.kwargs["managed_system_prompt"], prompt)
+        self.assertTrue(adapter._run_agent.await_args.kwargs["strict_context_only"])
+        body["messages"][0]["content"] = "changed without matching digest"
+        rejected = asyncio.run(adapter._handle_chat_completions(Request()))
+        self.assertEqual(rejected.status, 400)
+        adapter._run_agent.assert_awaited_once()
+
+    def test_managed_policy_replaces_hidden_prompt_at_actual_provider_boundary(self) -> None:
+        from gateway.platforms.api_server import APIServerAdapter
+        from run_agent import AIAgent
+        from agent.system_prompt import build_system_prompt
+        prompts = ["Published version 1: helpful natural conversation.",
+                   "Published version 2: answer briefly."]
+        captured = []
+        for prompt in prompts:
+            agent = AIAgent(model="openai/test-model", provider="openrouter",
+                            api_key="synthetic-unused-key", base_url="https://example.invalid/v1",
+                            enabled_toolsets=[], max_iterations=1, max_tokens=500,
+                            skip_context_files=True, skip_memory=True, quiet_mode=True,
+                            ephemeral_system_prompt="FORBIDDEN-OLD-SOUL-SENTINEL")
+            agent._cached_system_prompt = "FORBIDDEN-OLD-CORE-SENTINEL"
+            agent.prefill_messages = []
+            raw = SimpleNamespace(id="synthetic-generation", model="openai/test-model",
+                usage=SimpleNamespace(prompt_tokens=5,completion_tokens=2,total_tokens=7),
+                choices=[SimpleNamespace(finish_reason="stop",message=SimpleNamespace(
+                    content="A useful answer.",tool_calls=None,reasoning=None,
+                    reasoning_content=None,reasoning_details=None))])
+            def capture(api_kwargs, *args, **kwargs):
+                captured.append(api_kwargs["messages"])
+                self.assertEqual(build_system_prompt(agent), prompt)
+                return raw
+            agent._interruptible_api_call = capture
+            agent._interruptible_streaming_api_call = capture
+            adapter = object.__new__(APIServerAdapter)
+            adapter._create_agent = lambda **kwargs: agent
+            result, _ = asyncio.run(adapter._run_agent(user_message="Current supplied context",
+                conversation_history=[], strict_context_only=True, sourced_text_only=False,
+                managed_system_prompt=prompt))
+            self.assertEqual(result["final_response"], "A useful answer.")
+        self.assertEqual(len(captured), 2)
+        for messages, prompt in zip(captured, prompts):
+            self.assertEqual(messages[0], {"role": "system", "content": prompt})
+            self.assertEqual(messages[1], {"role": "user", "content": "Current supplied context"})
+            self.assertNotIn("FORBIDDEN-OLD", json.dumps(messages))
 
     def test_sourced_execution_reserves_output_for_json_not_reasoning(self) -> None:
         from gateway.platforms.api_server import APIServerAdapter
