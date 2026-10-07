@@ -2,6 +2,10 @@ import hashlib
 import unittest
 from types import SimpleNamespace
 from hermes_behavior_policy import validate_behavior_policy, install_managed_system_prompt
+from hermes_behavior_policy import managed_response_settings
+from hermes_dialogue_models import dialogue_agent_settings, PROFILES
+from unittest.mock import patch
+import os
 
 
 def fixture():
@@ -41,6 +45,37 @@ class BehaviorPolicyTests(unittest.TestCase):
         self.assertIsNone(validate_behavior_policy({"messages": []}, None))
         with self.assertRaises(ValueError):
             validate_behavior_policy({"tp_answer_format": "hermes_managed_v1"}, "request-1")
+
+    def test_json_admission_is_exact_and_requires_managed_policy(self):
+        body = fixture()
+        body["response_format"] = {"type": "json_object"}
+        self.assertEqual(validate_behavior_policy(body, "request-1"), body["tp_hermes_policy"])
+        for value in (None, "json_object", {}, {"type": "text"},
+                      {"type": "json_object", "schema": {}}):
+            with self.subTest(value=value):
+                body["response_format"] = value
+                with self.assertRaisesRegex(ValueError, "invalid_response_format"):
+                    validate_behavior_policy(body, "request-1")
+        with self.assertRaisesRegex(ValueError, "invalid_response_format"):
+            validate_behavior_policy({"response_format": {"type": "json_object"}}, "request-1")
+
+    def test_format_is_request_local_and_preserves_both_model_routes(self):
+        shared = {"provider": "openrouter", "base_url": "https://openrouter.ai/api/v1",
+                  "credential_pool": object(), "request_overrides": {"extra_body": {"service_tier": "default"}}}
+        with patch.dict(os.environ, {"HERMES_DIALOGUE_MODEL_CHOICE_ENABLED": "true",
+                        "HERMES_RUNTIME_TIER": "economy", "HERMES_FIXED_MODEL_PROVIDER": "openrouter"}):
+            for code, profile in PROFILES.items():
+                routed, model, _, fallback = dialogue_agent_settings(code, shared, "legacy", {}, None)
+                before = dict(routed["request_overrides"])
+                current = managed_response_settings(routed, {"type": "json_object"})
+                self.assertEqual(model, profile["model"])
+                self.assertIsNone(fallback)
+                self.assertEqual(current["request_overrides"]["response_format"], {"type": "json_object"})
+                self.assertEqual(current["request_overrides"]["extra_body"]["provider"]["only"], [profile["provider"]])
+                self.assertEqual(routed["request_overrides"], before)
+                self.assertIs(current["credential_pool"], shared["credential_pool"])
+        self.assertNotIn("response_format", shared["request_overrides"])
+        self.assertIs(managed_response_settings(shared, None), shared)
 
 
 if __name__ == "__main__":
