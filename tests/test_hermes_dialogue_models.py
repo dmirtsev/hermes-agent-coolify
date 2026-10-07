@@ -13,6 +13,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import hermes_dialogue_models as models
 import hermes_durable_accounting as durable
+from hermes_behavior_policy import managed_response_settings
 
 ENABLED = {"HERMES_DIALOGUE_MODEL_CHOICE_ENABLED": "true", "HERMES_RUNTIME_TIER": "economy", "HERMES_FIXED_MODEL_PROVIDER": "openrouter"}
 
@@ -91,7 +92,9 @@ class PatchedConstructorTests(unittest.TestCase):
         adapter = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "APIServerAdapter")
         constructor = next(node for node in adapter.body if isinstance(node, ast.FunctionDef) and node.name == "_create_agent")
         code = ast.fix_missing_locations(ast.Module(body=[constructor], type_ignores=[]))
-        namespace = {"Optional": Optional, "Any": Any, "os": os, "dialogue_agent_settings": models.dialogue_agent_settings}
+        namespace = {"Optional": Optional, "Any": Any, "os": os,
+                     "dialogue_agent_settings": models.dialogue_agent_settings,
+                     "managed_response_settings": managed_response_settings}
         exec(compile(code, str(PINNED_API), "exec"), namespace)
         run_agent = ModuleType("run_agent")
         run_agent.AIAgent = lambda **kwargs: SimpleNamespace(**kwargs)

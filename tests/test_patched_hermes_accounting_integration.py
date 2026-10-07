@@ -219,6 +219,7 @@ class PatchedHermesAccountingIntegrationTests(unittest.TestCase):
                   "system_sha256": hashlib.sha256(prompt.encode()).hexdigest()}
         body = {"stream": False, "tp_execution_mode": "interpretation_facts_v1",
                 "tp_answer_format": "hermes_managed_v1", "tp_hermes_policy": policy,
+                "response_format": {"type": "json_object"},
                 "tools": [], "tool_choice": "none",
                 "messages": [{"role": "system", "content": prompt},
                              {"role": "user", "content": "Current chart and history"}]}
@@ -240,6 +241,7 @@ class PatchedHermesAccountingIntegrationTests(unittest.TestCase):
         self.assertEqual(response.headers["X-Hermes-Policy-Id"], policy["version_id"])
         self.assertEqual(response.headers["X-Hermes-Policy-Sha256"], policy["sha256"])
         self.assertEqual(adapter._run_agent.await_args.kwargs["managed_system_prompt"], prompt)
+        self.assertEqual(adapter._run_agent.await_args.kwargs["managed_response_format"], {"type": "json_object"})
         self.assertTrue(adapter._run_agent.await_args.kwargs["strict_context_only"])
         body["messages"][0]["content"] = "changed without matching digest"
         rejected = asyncio.run(adapter._handle_chat_completions(Request()))
@@ -283,6 +285,46 @@ class PatchedHermesAccountingIntegrationTests(unittest.TestCase):
             self.assertEqual(messages[0], {"role": "system", "content": prompt})
             self.assertEqual(messages[1], {"role": "user", "content": "Current supplied context"})
             self.assertNotIn("FORBIDDEN-OLD", json.dumps(messages))
+
+    def test_managed_format_reaches_provider_without_changing_legacy_agent(self) -> None:
+        from gateway.platforms.api_server import APIServerAdapter
+        formats = [None, {"type": "json_object"}]
+        shared = {"provider": "openrouter", "api_key": "synthetic-unused-key",
+                  "base_url": "https://example.invalid/v1", "request_overrides": {}}
+        for output_format in formats:
+            with self.subTest(output_format=output_format):
+                adapter = object.__new__(APIServerAdapter)
+                adapter._session_db = None
+                with patch("gateway.run._resolve_runtime_agent_kwargs", return_value=shared), \
+                     patch("gateway.run._resolve_gateway_model", return_value="openai/test-model"), \
+                     patch("gateway.run._load_gateway_config", return_value={}), \
+                     patch("gateway.run.GatewayRunner._load_reasoning_config", return_value={}), \
+                     patch("gateway.run.GatewayRunner._load_fallback_model", return_value=None), \
+                     patch("hermes_cli.tools_config._get_platform_tools", return_value=set()):
+                    agent = adapter._create_agent(strict_context_only=True,
+                        managed_response_format=output_format)
+                agent.prefill_messages = []
+                captured = []
+                raw = SimpleNamespace(id="synthetic-format-generation", model="openai/test-model",
+                    usage=SimpleNamespace(prompt_tokens=5, completion_tokens=2, total_tokens=7),
+                    choices=[SimpleNamespace(finish_reason="stop", message=SimpleNamespace(
+                        content='{"mode":"interpretation","paragraphs":[{"text":"Общее пояснение.","refs":[]}]}',
+                        tool_calls=None, reasoning=None, reasoning_content=None, reasoning_details=None))])
+                def capture(api_kwargs, *args, **kwargs):
+                    captured.append(api_kwargs)
+                    return raw
+                agent._interruptible_api_call = capture
+                agent._interruptible_streaming_api_call = capture
+                adapter._create_agent = lambda **kwargs: agent
+                result, _ = asyncio.run(adapter._run_agent(user_message="Current supplied facts",
+                    conversation_history=[], strict_context_only=True, managed_system_prompt="Return JSON.",
+                    managed_response_format=output_format))
+                self.assertEqual(len(captured), 1, str(result))
+                if output_format is None:
+                    self.assertNotIn("response_format", captured[0])
+                else:
+                    self.assertEqual(captured[0]["response_format"], output_format)
+        self.assertEqual(shared["request_overrides"], {})
 
     def test_sourced_execution_reserves_output_for_json_not_reasoning(self) -> None:
         from gateway.platforms.api_server import APIServerAdapter

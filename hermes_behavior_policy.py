@@ -1,10 +1,14 @@
 """Trusted, request-scoped system prompt replacement for Cabinet dialogues."""
 import hashlib
 import re
+from copy import deepcopy
 
 
 def validate_behavior_policy(body, idempotency_key):
     policy = body.get("tp_hermes_policy")
+    if "response_format" in body and (
+            policy is None or body["response_format"] != {"type": "json_object"}):
+        raise ValueError("hermes_policy_invalid_response_format")
     if policy is None:
         if body.get("tp_answer_format") == "hermes_managed_v1":
             raise ValueError("hermes_policy_required")
@@ -35,6 +39,19 @@ def validate_behavior_policy(body, idempotency_key):
     if actual != policy["system_sha256"]:
         raise ValueError("hermes_policy_system_hash_mismatch")
     return dict(policy)
+
+
+def managed_response_settings(runtime_kwargs, response_format):
+    """Set output format before constructing this request's provider agent."""
+    if response_format is None:
+        return runtime_kwargs
+    if response_format != {"type": "json_object"}:
+        raise ValueError("hermes_policy_invalid_response_format")
+    kwargs = dict(runtime_kwargs)
+    overrides = deepcopy(runtime_kwargs.get("request_overrides") or {})
+    overrides["response_format"] = {"type": "json_object"}
+    kwargs["request_overrides"] = overrides
+    return kwargs
 
 
 def install_managed_system_prompt(agent, prompt):

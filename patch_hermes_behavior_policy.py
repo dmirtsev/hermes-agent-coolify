@@ -13,7 +13,7 @@ def replace(old, new, label):
 
 replace("from agent.sourced_text import strict_context_execution_mode\n",
         "from agent.sourced_text import strict_context_execution_mode\n"
-        "from agent.behavior_policy import validate_behavior_policy, install_managed_system_prompt\n", "imports")
+        "from agent.behavior_policy import validate_behavior_policy, install_managed_system_prompt, managed_response_settings\n", "imports")
 replace('''        messages = body.get("messages")
 ''', '''        try:
             managed_policy = validate_behavior_policy(body, request.headers.get("Idempotency-Key"))
@@ -26,12 +26,30 @@ replace('''                dialogue_model_code=dialogue_model_code,
             )
 ''', '''                dialogue_model_code=dialogue_model_code,
                 managed_system_prompt=system_prompt if managed_policy is not None else None,
+                managed_response_format=body.get("response_format") if managed_policy is not None else None,
             )
 ''', "execution")
 replace('''        dialogue_model_code: Optional[str] = None,
     ) -> tuple:''', '''        dialogue_model_code: Optional[str] = None,
         managed_system_prompt: Optional[str] = None,
+        managed_response_format: Optional[dict] = None,
     ) -> tuple:''', "argument")
+replace('''        dialogue_model_code: Optional[str] = None,
+    ) -> Any:''', '''        dialogue_model_code: Optional[str] = None,
+        managed_response_format: Optional[dict] = None,
+    ) -> Any:''', "constructor argument")
+replace('''            dialogue_model_code, runtime_kwargs, model, reasoning_config, fallback_model
+        )
+
+        agent = AIAgent(''', '''            dialogue_model_code, runtime_kwargs, model, reasoning_config, fallback_model
+        )
+        runtime_kwargs = managed_response_settings(runtime_kwargs, managed_response_format)
+
+        agent = AIAgent(''', "provider output settings")
+replace('''                    dialogue_model_code=dialogue_model_code,
+                )''', '''                    dialogue_model_code=dialogue_model_code,
+                    managed_response_format=managed_response_format,
+                )''', "constructor output format")
 replace('''            if sourced_text_only:
 ''', '''            install_managed_system_prompt(agent, managed_system_prompt)
             if sourced_text_only:
