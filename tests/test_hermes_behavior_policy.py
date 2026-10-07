@@ -46,7 +46,7 @@ class BehaviorPolicyTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate_behavior_policy({"tp_answer_format": "hermes_managed_v1"}, "request-1")
 
-    def test_json_admission_is_exact_and_requires_managed_policy(self):
+    def test_json_admission_is_exact_for_managed_policy(self):
         body = fixture()
         body["response_format"] = {"type": "json_object"}
         self.assertEqual(validate_behavior_policy(body, "request-1"), body["tp_hermes_policy"])
@@ -56,8 +56,18 @@ class BehaviorPolicyTests(unittest.TestCase):
                 body["response_format"] = value
                 with self.assertRaisesRegex(ValueError, "invalid_response_format"):
                     validate_behavior_policy(body, "request-1")
-        with self.assertRaisesRegex(ValueError, "invalid_response_format"):
-            validate_behavior_policy({"response_format": {"type": "json_object"}}, "request-1")
+
+    def test_legacy_planner_json_does_not_enter_managed_policy(self):
+        for mode in ("sourced_text_v1", None):
+            body = {"model": "hermes-agent", "response_format": {"type": "json_object"},
+                    "messages": [{"role": "system", "content": "Return a planner JSON"},
+                                 {"role": "user", "content": "Current workspace"}]}
+            if mode is not None:
+                body["tp_execution_mode"] = mode
+            self.assertIsNone(validate_behavior_policy(body, "planner-request"))
+        body["tp_answer_format"] = "hermes_managed_v1"
+        with self.assertRaisesRegex(ValueError, "hermes_policy_required"):
+            validate_behavior_policy(body, "planner-request")
 
     def test_format_is_request_local_and_preserves_both_model_routes(self):
         shared = {"provider": "openrouter", "base_url": "https://openrouter.ai/api/v1",

@@ -212,6 +212,59 @@ class PatchedHermesAccountingIntegrationTests(unittest.TestCase):
                                                   strict_context_only=True, sourced_text_only=False))
         self.assertEqual(result["final_response"], "verified answer")
 
+    def test_legacy_planner_and_managed_json_keep_durable_accounting(self) -> None:
+        from agent.openrouter_accounting import record_openrouter_response
+        from gateway.platforms.api_server import APIServerAdapter
+        for managed in (False, True):
+            with self.subTest(managed=managed), tempfile.TemporaryDirectory() as directory, patch.dict(
+                    os.environ, {"HERMES_ACCOUNTING_JOURNAL_PATH": str(Path(directory) / "journal.sqlite3")}, clear=False):
+                prompt = "Use supplied data and return JSON."
+                body = {"model": "hermes-agent", "response_format": {"type": "json_object"},
+                        "tp_execution_mode": "interpretation_facts_v1" if managed else "sourced_text_v1",
+                        "tools": [], "tool_choice": "none",
+                        "messages": [{"role": "system", "content": prompt},
+                                     {"role": "user", "content": "Current workspace data"}]}
+                if managed:
+                    body.update(tp_answer_format="hermes_managed_v1", tp_hermes_policy={
+                        "version_id": "policy-7", "version": 7, "sha256": "a" * 64,
+                        "system_sha256": hashlib.sha256(prompt.encode()).hexdigest()})
+                agent = SimpleNamespace(provider="openrouter", model="configured/model",
+                    base_url="https://openrouter.ai/api/v1", max_tokens=500, reasoning_config={},
+                    session_prompt_tokens=3, session_completion_tokens=2, session_total_tokens=5,
+                    session_cache_read_tokens=0, session_cache_write_tokens=0,
+                    session_reasoning_tokens=0, session_id="isolated-json-test")
+                raw = SimpleNamespace(id="gen-json-test", model="configured/model", provider="Provider",
+                    usage=SimpleNamespace(prompt_tokens=3, completion_tokens=2, total_tokens=5,
+                                          cost="0.00001", prompt_tokens_details=None,
+                                          completion_tokens_details=None), openrouter_metadata=None)
+                calls = []
+                def create_agent(**kwargs):
+                    calls.append(kwargs)
+                    return agent
+                def run_conversation(**kwargs):
+                    record_openrouter_response(agent, raw)
+                    return {"final_response": '{"kind":"hermes"}', "completed": True}
+                agent.run_conversation = run_conversation
+                adapter = object.__new__(APIServerAdapter)
+                adapter._api_key, adapter._model_name = "gateway-token", "hermes-agent"
+                adapter._create_agent = create_agent
+                class Request:
+                    headers = {"Authorization": "Bearer gateway-token", "Idempotency-Key": "json-durable-test"}
+                    async def json(self):
+                        return body
+                response = asyncio.run(adapter._handle_chat_completions(Request()))
+                self.assertEqual(response.status, 200)
+                payload = json.loads(response.text)
+                self.assertEqual(payload["hermes_accounting"]["cost"]["status"], "actual")
+                self.assertEqual(payload["hermes_accounting"]["cost"]["amount_micro_usd"], 10)
+                self.assertEqual(calls[0]["managed_response_format"], {"type": "json_object"} if managed else None)
+                self.assertEqual("X-Hermes-Policy-Id" in response.headers, managed)
+                replay = asyncio.run(adapter._handle_chat_completions(Request()))
+                self.assertEqual(replay.status, 200)
+                self.assertEqual(replay.headers["X-Hermes-Idempotency-Replayed"], "true")
+                self.assertEqual(json.loads(replay.text)["hermes_accounting"], payload["hermes_accounting"])
+                self.assertEqual(len(calls), 1)
+
     def test_managed_policy_handler_returns_receipt_and_passes_replacement(self) -> None:
         from gateway.platforms.api_server import APIServerAdapter
         prompt = "Published policy: explain the supplied data naturally."

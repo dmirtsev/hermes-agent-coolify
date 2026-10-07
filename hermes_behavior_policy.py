@@ -6,13 +6,14 @@ from copy import deepcopy
 
 def validate_behavior_policy(body, idempotency_key):
     policy = body.get("tp_hermes_policy")
-    if "response_format" in body and (
-            policy is None or body["response_format"] != {"type": "json_object"}):
-        raise ValueError("hermes_policy_invalid_response_format")
     if policy is None:
         if body.get("tp_answer_format") == "hermes_managed_v1":
             raise ValueError("hermes_policy_required")
+        # Legacy planner/extraction bodies already carry response_format.
+        # Their existing transport stays outside managed-policy forwarding.
         return None
+    if "response_format" in body and body["response_format"] != {"type": "json_object"}:
+        raise ValueError("hermes_policy_invalid_response_format")
     if (not isinstance(policy, dict) or set(policy) !=
             {"version_id", "version", "sha256", "system_sha256"}):
         raise ValueError("hermes_policy_invalid")
