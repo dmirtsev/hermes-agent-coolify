@@ -96,6 +96,16 @@ class DurableAccountingTests(unittest.TestCase):
         with self.assertRaises(durable.RequestConflictError):
             durable.begin_request("cabinet-2", _payload("two"))
 
+    def test_frozen_completed_payload_replays_without_new_json_format(self):
+        old = {"model": "test/model", "messages": ["current facts"]}
+        digest = durable.request_payload_sha256(old)
+        durable.begin_request("frozen-format", digest)
+        durable.complete_request("frozen-format", digest, {"final_response": "saved"}, {"total_tokens": 1})
+        self.assertEqual(durable.begin_request("frozen-format", digest)["result"]["final_response"], "saved")
+        updated = {**old, "response_format": {"type": "json_object"}}
+        with self.assertRaises(durable.RequestConflictError):
+            durable.begin_request("frozen-format", durable.request_payload_sha256(updated))
+
     def test_failed_execution_is_fail_closed_on_retry(self):
         digest = _payload("failure")
         durable.begin_request("cabinet-3", digest)
