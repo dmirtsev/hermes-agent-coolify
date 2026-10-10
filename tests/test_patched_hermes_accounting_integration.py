@@ -371,6 +371,7 @@ class PatchedHermesAccountingIntegrationTests(unittest.TestCase):
                         api_key="synthetic-unused-key", base_url="https://example.invalid/v1",
                         enabled_toolsets=[], max_iterations=3, max_tokens=500,
                         skip_context_files=True, skip_memory=True, quiet_mode=True,
+                        request_overrides={"response_format": {"type": "json_object"}},
                         ephemeral_system_prompt=prompt)
         agent._cached_system_prompt = prompt
         agent.prefill_messages = []
@@ -396,6 +397,9 @@ class PatchedHermesAccountingIntegrationTests(unittest.TestCase):
             strict_context_only=True, managed_system_prompt=prompt,
             managed_response_format={"type": "json_object"}, managed_continuation=True))
         self.assertEqual(len(calls), 2)
+        self.assertEqual(calls[0]["response_format"], {"type": "json_object"})
+        self.assertEqual(calls[1]["response_format"], {"type": "json_object"})
+        self.assertIn("new, complete, valid JSON", calls[1]["messages"][-1]["content"])
         self.assertEqual(json.loads(result["final_response"])["mode"], "interpretation")
 
     def test_managed_repeated_length_returns_bounded_partial_without_summary(self) -> None:
@@ -407,6 +411,7 @@ class PatchedHermesAccountingIntegrationTests(unittest.TestCase):
                         api_key="synthetic-unused-key", base_url="https://example.invalid/v1",
                         enabled_toolsets=[], max_iterations=3, max_tokens=500,
                         skip_context_files=True, skip_memory=True, quiet_mode=True,
+                        request_overrides={"response_format": {"type": "json_object"}},
                         ephemeral_system_prompt=prompt)
         agent._cached_system_prompt = prompt
         agent.prefill_messages = []

@@ -112,10 +112,41 @@ replace(
 ''',
     "receipt",
 )
-# Managed JSON retries must discard the incomplete first object; concatenating
-# it with a second full object would produce invalid JSON. Legacy behavior stays.
+# Managed JSON retries must request a fresh complete object; concatenating
+# an incomplete object with a second full object would produce invalid JSON.
 loop = root / "agent/conversation_loop.py"
 loop_source = loop.read_text()
+old_prompt_sig = "def _get_continuation_prompt(is_partial_stub: bool, dropped_tools: Optional[List[str]] = None) -> str:"
+new_prompt_sig = "def _get_continuation_prompt(is_partial_stub: bool, dropped_tools: Optional[List[str]] = None, managed_json: bool = False) -> str:"
+if loop_source.count(old_prompt_sig) != 1:
+    raise RuntimeError("Behavior policy patch boundary: continuation prompt signature")
+loop_source = loop_source.replace(old_prompt_sig, new_prompt_sig, 1)
+old_prompt_branch = """    else:
+        return (
+            "[System: Your previous response was truncated by the output "
+            "length limit. Continue exactly where you left off. Do not "
+            "restart or repeat prior text. Finish the answer directly.]"
+        )"""
+new_prompt_branch = """    else:
+        if managed_json:
+            return (
+                "[System: The previous JSON response was truncated. Return one new, complete, valid JSON object now. "
+                "Do not continue or repeat the partial prefix. Use the same supplied facts and answer the same user question concisely. "
+                "Return JSON only.]"
+            )
+        return (
+            "[System: Your previous response was truncated by the output "
+            "length limit. Continue exactly where you left off. Do not "
+            "restart or repeat prior text. Finish the answer directly.]"
+        )"""
+if loop_source.count(old_prompt_branch) != 1:
+    raise RuntimeError("Behavior policy patch boundary: continuation prompt body")
+loop_source = loop_source.replace(old_prompt_branch, new_prompt_branch, 1)
+old_call = "_get_continuation_prompt(\n                                    _is_partial_stream_stub, _dropped_tools\n                                )"
+new_call = "_get_continuation_prompt(\n                                    _is_partial_stream_stub, _dropped_tools,\n                                    managed_json=getattr(agent, \"_tp_managed_json\", False),\n                                )"
+if loop_source.count(old_call) != 1:
+    raise RuntimeError("Behavior policy patch boundary: continuation prompt call")
+loop_source = loop_source.replace(old_call, new_call, 1)
 old = """                            if assistant_message.content:
                                 truncated_response_parts.append(assistant_message.content)"""
 new = """                            if assistant_message.content and not getattr(agent, "_tp_managed_json", False):
