@@ -62,6 +62,29 @@ class PatchedHermesAccountingIntegrationTests(unittest.TestCase):
         self.assertTrue(captured["skip_context_files"])
         self.assertTrue(captured["skip_memory"])
 
+    def test_managed_strict_agent_has_only_bounded_continuation_budget(self) -> None:
+        from gateway.platforms.api_server import APIServerAdapter
+
+        captured = {}
+
+        class CapturingAgent:
+            def __init__(self, **kwargs):
+                captured.update(kwargs)
+
+        adapter = object.__new__(APIServerAdapter)
+        adapter._session_db = object()
+        with patch("run_agent.AIAgent", CapturingAgent), patch(
+            "gateway.run._resolve_runtime_agent_kwargs", return_value={}
+        ), patch("gateway.run._resolve_gateway_model", return_value="test/model"), patch(
+            "gateway.run._load_gateway_config", return_value={}
+        ), patch("gateway.run.GatewayRunner._load_reasoning_config", return_value={}), patch(
+            "gateway.run.GatewayRunner._load_fallback_model", return_value=None
+        ), patch("hermes_cli.tools_config._get_platform_tools", return_value={"web"}):
+            adapter._create_agent(strict_context_only=True, managed_continuation=True)
+
+        self.assertEqual(captured["max_iterations"], 3)
+        self.assertEqual(captured["enabled_toolsets"], [])
+
     def test_strict_context_blocks_plugin_hooks_and_middleware(self) -> None:
         from agent.versioned_methods import strict_context_scope
         from hermes_cli import plugins
