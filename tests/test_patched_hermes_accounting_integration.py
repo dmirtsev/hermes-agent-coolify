@@ -62,6 +62,29 @@ class PatchedHermesAccountingIntegrationTests(unittest.TestCase):
         self.assertTrue(captured["skip_context_files"])
         self.assertTrue(captured["skip_memory"])
 
+    def test_managed_strict_agent_has_only_bounded_continuation_budget(self) -> None:
+        from gateway.platforms.api_server import APIServerAdapter
+
+        captured = {}
+
+        class CapturingAgent:
+            def __init__(self, **kwargs):
+                captured.update(kwargs)
+
+        adapter = object.__new__(APIServerAdapter)
+        adapter._session_db = object()
+        with patch("run_agent.AIAgent", CapturingAgent), patch(
+            "gateway.run._resolve_runtime_agent_kwargs", return_value={}
+        ), patch("gateway.run._resolve_gateway_model", return_value="test/model"), patch(
+            "gateway.run._load_gateway_config", return_value={}
+        ), patch("gateway.run.GatewayRunner._load_reasoning_config", return_value={}), patch(
+            "gateway.run.GatewayRunner._load_fallback_model", return_value=None
+        ), patch("hermes_cli.tools_config._get_platform_tools", return_value={"web"}):
+            adapter._create_agent(strict_context_only=True, managed_continuation=True)
+
+        self.assertEqual(captured["max_iterations"], 3)
+        self.assertEqual(captured["enabled_toolsets"], [])
+
     def test_strict_context_blocks_plugin_hooks_and_middleware(self) -> None:
         from agent.versioned_methods import strict_context_scope
         from hermes_cli import plugins
@@ -338,6 +361,80 @@ class PatchedHermesAccountingIntegrationTests(unittest.TestCase):
             self.assertEqual(messages[0], {"role": "system", "content": prompt})
             self.assertEqual(messages[1], {"role": "user", "content": "Current supplied context"})
             self.assertNotIn("FORBIDDEN-OLD", json.dumps(messages))
+
+    def test_managed_length_continuation_joins_json_and_stops_after_two_calls(self) -> None:
+        from gateway.platforms.api_server import APIServerAdapter
+        from run_agent import AIAgent
+
+        prompt = "Published managed JSON policy."
+        agent = AIAgent(model="openai/test-model", provider="openrouter",
+                        api_key="synthetic-unused-key", base_url="https://example.invalid/v1",
+                        enabled_toolsets=[], max_iterations=3, max_tokens=500,
+                        skip_context_files=True, skip_memory=True, quiet_mode=True,
+                        request_overrides={"response_format": {"type": "json_object"}},
+                        ephemeral_system_prompt=prompt)
+        agent._cached_system_prompt = prompt
+        agent.prefill_messages = []
+        pieces = iter([
+            ('{"mode":"interpretation","paragraphs":[{"text":"часть",', "length"),
+            ('{"mode":"interpretation","paragraphs":[{"text":"полный ответ","refs":[]}]}', "stop"),
+        ])
+        calls = []
+        def fake_call(api_kwargs, *args, **kwargs):
+            calls.append(api_kwargs)
+            content, reason = next(pieces)
+            return SimpleNamespace(id=f"synthetic-{len(calls)}", model="openai/test-model",
+                usage=SimpleNamespace(prompt_tokens=5, completion_tokens=2, total_tokens=7),
+                choices=[SimpleNamespace(finish_reason=reason, message=SimpleNamespace(
+                    content=content, tool_calls=None, reasoning=None,
+                    reasoning_content=None, reasoning_details=None))])
+        agent._interruptible_api_call = fake_call
+        agent._interruptible_streaming_api_call = fake_call
+        adapter = object.__new__(APIServerAdapter)
+        adapter._create_agent = lambda **kwargs: agent
+        result, _ = asyncio.run(adapter._run_agent(
+            user_message="Current supplied context", conversation_history=[],
+            strict_context_only=True, managed_system_prompt=prompt,
+            managed_response_format={"type": "json_object"}, managed_continuation=True))
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(calls[0]["response_format"], {"type": "json_object"})
+        self.assertEqual(calls[1]["response_format"], {"type": "json_object"})
+        self.assertIn("new, complete, valid JSON", calls[1]["messages"][-1]["content"])
+        self.assertEqual(json.loads(result["final_response"])["mode"], "interpretation")
+
+    def test_managed_repeated_length_returns_bounded_partial_without_summary(self) -> None:
+        from gateway.platforms.api_server import APIServerAdapter
+        from run_agent import AIAgent
+
+        prompt = "Published managed JSON policy."
+        agent = AIAgent(model="openai/test-model", provider="openrouter",
+                        api_key="synthetic-unused-key", base_url="https://example.invalid/v1",
+                        enabled_toolsets=[], max_iterations=3, max_tokens=500,
+                        skip_context_files=True, skip_memory=True, quiet_mode=True,
+                        request_overrides={"response_format": {"type": "json_object"}},
+                        ephemeral_system_prompt=prompt)
+        agent._cached_system_prompt = prompt
+        agent.prefill_messages = []
+        calls = []
+        def fake_call(api_kwargs, *args, **kwargs):
+            calls.append(api_kwargs)
+            return SimpleNamespace(id=f"synthetic-{len(calls)}", model="openai/test-model",
+                usage=SimpleNamespace(prompt_tokens=5, completion_tokens=2, total_tokens=7),
+                choices=[SimpleNamespace(finish_reason="length", message=SimpleNamespace(
+                    content='{"mode":"interpretation",', tool_calls=None, reasoning=None,
+                    reasoning_content=None, reasoning_details=None))])
+        agent._interruptible_api_call = fake_call
+        agent._interruptible_streaming_api_call = fake_call
+        adapter = object.__new__(APIServerAdapter)
+        adapter._create_agent = lambda **kwargs: agent
+        result, _ = asyncio.run(adapter._run_agent(
+            user_message="Current supplied context", conversation_history=[],
+            strict_context_only=True, managed_system_prompt=prompt,
+            managed_response_format={"type": "json_object"}, managed_continuation=True))
+        self.assertEqual(len(calls), 3)
+        self.assertTrue(result["partial"])
+        self.assertIn("truncated", result["error"].lower())
+        self.assertFalse(result["final_response"] and "summary" in result["final_response"].lower())
 
     def test_managed_format_reaches_provider_without_changing_legacy_agent(self) -> None:
         from gateway.platforms.api_server import APIServerAdapter

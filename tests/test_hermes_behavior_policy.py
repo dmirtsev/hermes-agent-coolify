@@ -2,7 +2,7 @@ import hashlib
 import unittest
 from types import SimpleNamespace
 from hermes_behavior_policy import validate_behavior_policy, install_managed_system_prompt
-from hermes_behavior_policy import managed_response_settings
+from hermes_behavior_policy import managed_response_settings, managed_iteration_budget
 
 
 def fixture():
@@ -77,6 +77,11 @@ class BehaviorPolicyTests(unittest.TestCase):
         self.assertIs(current["credential_pool"], shared["credential_pool"])
         self.assertNotIn("response_format", shared["request_overrides"])
         self.assertIs(managed_response_settings(shared, None), shared)
+
+    def test_only_managed_strict_requests_get_bounded_continuation(self):
+        self.assertEqual(managed_iteration_budget(True), 1)
+        self.assertEqual(managed_iteration_budget(True, True), 3)
+        self.assertIsNone(managed_iteration_budget(False, True))
 
 
 if __name__ == "__main__":

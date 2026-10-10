@@ -55,10 +55,18 @@ def managed_response_settings(runtime_kwargs, response_format):
     return kwargs
 
 
+def managed_iteration_budget(strict_context_only, managed_continuation=False):
+    """Keep legacy strict requests at one call; bound managed continuation."""
+    if not strict_context_only:
+        return None
+    return 3 if managed_continuation else 1
+
+
 def install_managed_system_prompt(agent, prompt):
     if prompt is None:
         return
     agent._tp_managed_system_prompt = prompt
+    agent._tp_managed_json = True
     agent._cached_system_prompt = prompt
     # Replacement is already the complete provider system instruction.
     agent.ephemeral_system_prompt = None
