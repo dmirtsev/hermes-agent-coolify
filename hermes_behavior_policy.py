@@ -66,6 +66,7 @@ def install_managed_system_prompt(agent, prompt):
     if prompt is None:
         return
     agent._tp_managed_system_prompt = prompt
+    agent._tp_managed_json = True
     agent._cached_system_prompt = prompt
     # Replacement is already the complete provider system instruction.
     agent.ephemeral_system_prompt = None

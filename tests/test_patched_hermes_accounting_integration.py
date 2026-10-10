@@ -376,7 +376,7 @@ class PatchedHermesAccountingIntegrationTests(unittest.TestCase):
         agent.prefill_messages = []
         pieces = iter([
             ('{"mode":"interpretation","paragraphs":[{"text":"часть",', "length"),
-            ('"refs":[]}]}', "stop"),
+            ('{"mode":"interpretation","paragraphs":[{"text":"полный ответ","refs":[]}]}', "stop"),
         ])
         calls = []
         def fake_call(api_kwargs, *args, **kwargs):

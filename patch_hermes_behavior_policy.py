@@ -112,6 +112,18 @@ replace(
 ''',
     "receipt",
 )
+# Managed JSON retries must discard the incomplete first object; concatenating
+# it with a second full object would produce invalid JSON. Legacy behavior stays.
+loop = root / "agent/conversation_loop.py"
+loop_source = loop.read_text()
+old = """                            if assistant_message.content:
+                                truncated_response_parts.append(assistant_message.content)"""
+new = """                            if assistant_message.content and not getattr(agent, "_tp_managed_json", False):
+                                truncated_response_parts.append(assistant_message.content)"""
+if loop_source.count(old) != 1:
+    raise RuntimeError("Behavior policy patch boundary: managed JSON length parts")
+loop.write_text(loop_source.replace(old, new, 1))
+
 compile(source, str(api), "exec")
 api.write_text(source)
 
