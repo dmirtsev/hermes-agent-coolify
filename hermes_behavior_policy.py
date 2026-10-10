@@ -55,6 +55,13 @@ def managed_response_settings(runtime_kwargs, response_format):
     return kwargs
 
 
+def managed_iteration_budget(strict_context_only, managed_continuation=False):
+    """Keep legacy strict requests at one call; bound managed continuation."""
+    if not strict_context_only:
+        return None
+    return 3 if managed_continuation else 1
+
+
 def install_managed_system_prompt(agent, prompt):
     if prompt is None:
         return

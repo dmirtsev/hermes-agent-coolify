@@ -42,6 +42,7 @@ replace(
     '''                sourced_text_only=strict_sourced_text,
                 managed_system_prompt=system_prompt if managed_policy is not None else None,
                 managed_response_format=body.get("response_format") if managed_policy is not None else None,
+                managed_continuation=managed_policy is not None,
             )
 ''',
     "execution",
@@ -52,6 +53,7 @@ replace(
     '''        sourced_text_only: bool = False,
         managed_system_prompt: Optional[str] = None,
         managed_response_format: Optional[dict] = None,
+        managed_continuation: bool = False,
     ) -> tuple:''',
     "execution arguments",
 )
@@ -60,8 +62,16 @@ replace(
     ) -> Any:''',
     '''        strict_context_only: bool = False,
         managed_response_format: Optional[dict] = None,
+        managed_continuation: bool = False,
     ) -> Any:''',
     "constructor argument",
+)
+replace(
+    '''            max_iterations = 1
+''',
+    '''            max_iterations = 3 if managed_continuation else 1
+''',
+    "managed bounded continuation budget",
 )
 replace(
     '''        fallback_model = GatewayRunner._load_fallback_model()
@@ -78,6 +88,7 @@ replace(
                 )''',
     '''                    strict_context_only=strict_context_only,
                     managed_response_format=managed_response_format,
+                    managed_continuation=managed_continuation,
                 )''',
     "constructor output format",
 )
