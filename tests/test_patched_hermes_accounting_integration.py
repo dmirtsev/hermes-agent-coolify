@@ -429,7 +429,7 @@ class PatchedHermesAccountingIntegrationTests(unittest.TestCase):
         self.assertEqual(len(calls), 3)
         self.assertTrue(result["partial"])
         self.assertIn("truncated", result["error"].lower())
-        self.assertNotIn("summary", result["final_response"].lower())
+        self.assertFalse(result["final_response"] and "summary" in result["final_response"].lower())
 
     def test_managed_format_reaches_provider_without_changing_legacy_agent(self) -> None:
         from gateway.platforms.api_server import APIServerAdapter
