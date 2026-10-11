@@ -15,7 +15,7 @@ Changing the profile under the same request key conflicts; replay returns the
 original result without dispatching a second generation.
 
 - `deepseek_flash`: DeepSeek Flash, client name «Искра»;
-  model `deepseek/deepseek-v4-flash`, provider `novita/fp8`.
+  model `deepseek/deepseek-v4-flash`, provider `deepinfra/fp8`.
 - `gpt_luna`: GPT Luna, client name «Луна»;
   model `openai/gpt-6-luna`, provider `openai`.
 
@@ -26,6 +26,12 @@ Credentials and shared runtime configuration are unchanged. Every request gets
 its own agent settings, so concurrent users cannot overwrite each other's
 models. Accounting records the constructed agent model and provider-reported
 generation evidence. Cosmetic response.model is not identity evidence.
+
+On 11 October 2026 the public OpenRouter endpoints API no longer listed the
+older `novita/fp8` route. The explicit Iskra profile is pinned to the advertised
+`deepinfra/fp8` route for the same model; it supports response format, reasoning
+and an output limit above 8192. Public metadata is a readiness check, not live
+generation evidence. The existing unselected runtime route is unchanged.
 
 Requests without the public code retain the previous fixed runtime behavior,
 including its existing budgets and model. Balanced/Strong, onboarding and

@@ -48,7 +48,7 @@ class DialogueModelsTests(unittest.TestCase):
         self.assertIs(one[0]["credential_pool"], credentials)
         self.assertEqual(kwargs["request_overrides"]["extra_body"]["provider"]["only"], ["old-provider"])
         self.assertEqual(one[0]["request_overrides"]["extra_body"]["provider"], {"only": ["openai"], "allow_fallbacks": False})
-        self.assertEqual(two[0]["request_overrides"]["extra_body"]["provider"]["only"], ["novita/fp8"])
+        self.assertEqual(two[0]["request_overrides"]["extra_body"]["provider"]["only"], ["deepinfra/fp8"])
         self.assertNotIn("models", one[0]["request_overrides"]["extra_body"])
         self.assertEqual(one[1:], ("openai/gpt-6-luna", {"effort": "high"}, None))
         self.assertEqual(one[0]["max_tokens"], two[0]["max_tokens"])
