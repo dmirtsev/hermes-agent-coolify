@@ -1,7 +1,7 @@
 # Hermes dialogue model profiles — TOC-36
 
 Status: implementation for review, not deployed. Production wrapper baseline:
-`bb126df9100e98ee83e8bed38100f6921feec981`.
+`20eec74220ab1c73eebade504695dd420576fc91` (PR #55, checked 11 October 2026).
 Paired Cabinet change: `docs/HERMES_DIALOGUE_MODEL_CHOICE_V1.md` in
 `dmirtsev/CabinetAstroGeo`.
 
@@ -15,7 +15,7 @@ Changing the profile under the same request key conflicts; replay returns the
 original result without dispatching a second generation.
 
 - `deepseek_flash`: DeepSeek Flash, client name «Искра»;
-  model `deepseek/deepseek-v4-flash`, provider `novita/fp8`.
+  model `deepseek/deepseek-v4-flash`, provider `deepinfra/fp8`.
 - `gpt_luna`: GPT Luna, client name «Луна»;
   model `openai/gpt-6-luna`, provider `openai`.
 
@@ -26,6 +26,12 @@ Credentials and shared runtime configuration are unchanged. Every request gets
 its own agent settings, so concurrent users cannot overwrite each other's
 models. Accounting records the constructed agent model and provider-reported
 generation evidence. Cosmetic response.model is not identity evidence.
+
+On 11 October 2026 the public OpenRouter endpoints API no longer listed the
+older `novita/fp8` route. The explicit Iskra profile is pinned to the advertised
+`deepinfra/fp8` route for the same model; it supports response format, reasoning
+and an output limit above 8192. Public metadata is a readiness check, not live
+generation evidence. The existing unselected runtime route is unchanged.
 
 Requests without the public code retain the previous fixed runtime behavior,
 including its existing budgets and model. Balanced/Strong, onboarding and
@@ -49,9 +55,17 @@ Production delivery requires separate explicit approval for the exact pair.
 ## Verification and remaining acceptance
 
 The Docker patch fails when expected anchors in the digest-pinned upstream
-source differ. It is applied after the existing accounting/context patches.
+source differ. It is applied after the existing accounting and behavior-policy
+patches. Model routing is applied before `managed_response_settings`, preserving
+the current managed JSON response and continuation behavior from PR #55.
 Local source verification used the reviewed pinned upstream revision
 `a38003be3d8ce87565915105b2d6261ba2cdb723`.
+
+The installed API source was exported read-only (SHA256
+`7f62a6634e9b5af846c1f6ead8e4c189fd4fb21998d7c636b09f0a42c5e7faa2`).
+Applying the new patch locally succeeded; the resulting source compiles and
+the real constructor test keeps managed JSON, three iterations, disabled
+tools/context discovery and isolated model profiles for concurrent requests.
 
 Run `python3 -m unittest discover -s tests`. To exercise the real patched
 constructor outside the built image, set `HERMES_PATCHED_API_SOURCE` to the

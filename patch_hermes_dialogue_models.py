@@ -21,17 +21,15 @@ replace("from agent.design_completion import handle_design_completion\n",
         "from agent.design_completion import handle_design_completion\n"
         "from agent.dialogue_models import (DialogueModelError, validate_dialogue_model, dialogue_agent_settings, public_dialogue_models)\n", "imports")
 replace('''        strict_context_only: bool = False,
-    ) -> Any:''', '''        strict_context_only: bool = False,
+        managed_response_format: Optional[dict] = None,''', '''        strict_context_only: bool = False,
         dialogue_model_code: Optional[str] = None,
-    ) -> Any:''', "agent constructor argument")
+        managed_response_format: Optional[dict] = None,''', "agent constructor argument")
 replace('''        fallback_model = GatewayRunner._load_fallback_model()
-
-        agent = AIAgent(''', '''        fallback_model = GatewayRunner._load_fallback_model()
+        runtime_kwargs = managed_response_settings(runtime_kwargs, managed_response_format)''', '''        fallback_model = GatewayRunner._load_fallback_model()
         runtime_kwargs, model, reasoning_config, fallback_model = dialogue_agent_settings(
             dialogue_model_code, runtime_kwargs, model, reasoning_config, fallback_model
         )
-
-        agent = AIAgent(''', "per-agent profile")
+        runtime_kwargs = managed_response_settings(runtime_kwargs, managed_response_format)''', "per-agent profile")
 replace('''        messages = body.get("messages")
 ''', '''        try:
             dialogue_model_code = validate_dialogue_model(body, request.headers.get("Idempotency-Key"))
@@ -45,13 +43,13 @@ replace('''                sourced_text_only=strict_sourced_text,
                 dialogue_model_code=dialogue_model_code,
 ''', "execution profile")
 replace('''        sourced_text_only: bool = False,
-    ) -> tuple:''', '''        sourced_text_only: bool = False,
+        managed_system_prompt: Optional[str] = None,''', '''        sourced_text_only: bool = False,
         dialogue_model_code: Optional[str] = None,
-    ) -> tuple:''', "execution argument")
+        managed_system_prompt: Optional[str] = None,''', "execution argument")
 replace('''                    strict_context_only=strict_context_only,
-                )''', '''                    strict_context_only=strict_context_only,
+                    managed_response_format=managed_response_format,''', '''                    strict_context_only=strict_context_only,
                     dialogue_model_code=dialogue_model_code,
-                )''', "agent profile argument")
+                    managed_response_format=managed_response_format,''', "agent profile argument")
 replace('''            "release": _wrapper_release_evidence(),''', '''            "release": _wrapper_release_evidence(),
             "dialogue_models": public_dialogue_models(),''', "public capability", count=2)
 compile(source, str(target), "exec")

@@ -10,7 +10,7 @@ import os
 from copy import deepcopy
 
 PROFILES = {
-    "deepseek_flash": {"model": "deepseek/deepseek-v4-flash", "provider": "novita/fp8"},
+    "deepseek_flash": {"model": "deepseek/deepseek-v4-flash", "provider": "deepinfra/fp8"},
     "gpt_luna": {"model": "openai/gpt-6-luna", "provider": "openai"},
 }
 

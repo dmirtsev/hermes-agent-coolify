@@ -2,10 +2,7 @@ import hashlib
 import unittest
 from types import SimpleNamespace
 from hermes_behavior_policy import validate_behavior_policy, install_managed_system_prompt
-from hermes_behavior_policy import managed_response_settings
-from hermes_dialogue_models import dialogue_agent_settings, PROFILES
-from unittest.mock import patch
-import os
+from hermes_behavior_policy import managed_response_settings, managed_iteration_budget
 
 
 def fixture():
@@ -41,6 +38,21 @@ class BehaviorPolicyTests(unittest.TestCase):
         self.assertIsNone(one.ephemeral_system_prompt)
         self.assertEqual(two._cached_system_prompt, "other")
 
+    def test_free_plain_response_does_not_enable_json_continuation(self):
+        body = fixture()
+        body["tp_dialogue_mode"] = "free_dialogue"
+        self.assertEqual(validate_behavior_policy(body, "free-1"), body["tp_hermes_policy"])
+        free, standard = SimpleNamespace(), SimpleNamespace()
+        install_managed_system_prompt(free, "Free")
+        install_managed_system_prompt(standard, "Standard", {"type": "json_object"})
+        self.assertFalse(free._tp_managed_json)
+        self.assertTrue(standard._tp_managed_json)
+        self.assertEqual(free._cached_system_prompt, "Free")
+        for invalid in ("creative", None, {}, []):
+            body["tp_dialogue_mode"] = invalid
+            with self.assertRaisesRegex(ValueError, "dialogue_mode_invalid"):
+                validate_behavior_policy(body, "free-1")
+
     def test_legacy_request_is_unchanged(self):
         self.assertIsNone(validate_behavior_policy({"messages": []}, None))
         with self.assertRaises(ValueError):
@@ -69,23 +81,22 @@ class BehaviorPolicyTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "hermes_policy_required"):
             validate_behavior_policy(body, "planner-request")
 
-    def test_format_is_request_local_and_preserves_both_model_routes(self):
+    def test_format_is_request_local_and_preserves_production_route(self):
         shared = {"provider": "openrouter", "base_url": "https://openrouter.ai/api/v1",
                   "credential_pool": object(), "request_overrides": {"extra_body": {"service_tier": "default"}}}
-        with patch.dict(os.environ, {"HERMES_DIALOGUE_MODEL_CHOICE_ENABLED": "true",
-                        "HERMES_RUNTIME_TIER": "economy", "HERMES_FIXED_MODEL_PROVIDER": "openrouter"}):
-            for code, profile in PROFILES.items():
-                routed, model, _, fallback = dialogue_agent_settings(code, shared, "legacy", {}, None)
-                before = dict(routed["request_overrides"])
-                current = managed_response_settings(routed, {"type": "json_object"})
-                self.assertEqual(model, profile["model"])
-                self.assertIsNone(fallback)
-                self.assertEqual(current["request_overrides"]["response_format"], {"type": "json_object"})
-                self.assertEqual(current["request_overrides"]["extra_body"]["provider"]["only"], [profile["provider"]])
-                self.assertEqual(routed["request_overrides"], before)
-                self.assertIs(current["credential_pool"], shared["credential_pool"])
+        before = dict(shared["request_overrides"])
+        current = managed_response_settings(shared, {"type": "json_object"})
+        self.assertEqual(current["request_overrides"]["response_format"], {"type": "json_object"})
+        self.assertEqual(current["request_overrides"]["extra_body"], {"service_tier": "default"})
+        self.assertEqual(shared["request_overrides"], before)
+        self.assertIs(current["credential_pool"], shared["credential_pool"])
         self.assertNotIn("response_format", shared["request_overrides"])
         self.assertIs(managed_response_settings(shared, None), shared)
+
+    def test_only_managed_strict_requests_get_bounded_continuation(self):
+        self.assertEqual(managed_iteration_budget(True), 1)
+        self.assertEqual(managed_iteration_budget(True, True), 3)
+        self.assertIsNone(managed_iteration_budget(False, True))
 
 
 if __name__ == "__main__":

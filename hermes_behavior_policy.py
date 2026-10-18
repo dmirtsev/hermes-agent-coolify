@@ -5,6 +5,8 @@ from copy import deepcopy
 
 
 def validate_behavior_policy(body, idempotency_key):
+    if body.get("tp_dialogue_mode", "standard") not in ("standard", "free_dialogue"):
+        raise ValueError("hermes_dialogue_mode_invalid")
     policy = body.get("tp_hermes_policy")
     if policy is None:
         if body.get("tp_answer_format") == "hermes_managed_v1":
@@ -55,10 +57,18 @@ def managed_response_settings(runtime_kwargs, response_format):
     return kwargs
 
 
-def install_managed_system_prompt(agent, prompt):
+def managed_iteration_budget(strict_context_only, managed_continuation=False):
+    """Keep legacy strict requests at one call; bound managed continuation."""
+    if not strict_context_only:
+        return None
+    return 3 if managed_continuation else 1
+
+
+def install_managed_system_prompt(agent, prompt, response_format=None):
     if prompt is None:
         return
     agent._tp_managed_system_prompt = prompt
+    agent._tp_managed_json = response_format == {"type": "json_object"}
     agent._cached_system_prompt = prompt
     # Replacement is already the complete provider system instruction.
     agent.ephemeral_system_prompt = None

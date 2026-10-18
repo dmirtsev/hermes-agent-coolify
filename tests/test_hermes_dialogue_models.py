@@ -48,7 +48,7 @@ class DialogueModelsTests(unittest.TestCase):
         self.assertIs(one[0]["credential_pool"], credentials)
         self.assertEqual(kwargs["request_overrides"]["extra_body"]["provider"]["only"], ["old-provider"])
         self.assertEqual(one[0]["request_overrides"]["extra_body"]["provider"], {"only": ["openai"], "allow_fallbacks": False})
-        self.assertEqual(two[0]["request_overrides"]["extra_body"]["provider"]["only"], ["novita/fp8"])
+        self.assertEqual(two[0]["request_overrides"]["extra_body"]["provider"]["only"], ["deepinfra/fp8"])
         self.assertNotIn("models", one[0]["request_overrides"]["extra_body"])
         self.assertEqual(one[1:], ("openai/gpt-6-luna", {"effort": "high"}, None))
         self.assertEqual(one[0]["max_tokens"], two[0]["max_tokens"])
@@ -92,8 +92,7 @@ class PatchedConstructorTests(unittest.TestCase):
         adapter = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "APIServerAdapter")
         constructor = next(node for node in adapter.body if isinstance(node, ast.FunctionDef) and node.name == "_create_agent")
         code = ast.fix_missing_locations(ast.Module(body=[constructor], type_ignores=[]))
-        namespace = {"Optional": Optional, "Any": Any, "os": os,
-                     "dialogue_agent_settings": models.dialogue_agent_settings,
+        namespace = {"Optional": Optional, "Any": Any, "os": os, "dialogue_agent_settings": models.dialogue_agent_settings,
                      "managed_response_settings": managed_response_settings}
         exec(compile(code, str(PINNED_API), "exec"), namespace)
         run_agent = ModuleType("run_agent")
@@ -107,7 +106,9 @@ class PatchedConstructorTests(unittest.TestCase):
         tools._get_platform_tools = lambda *args: []
         owner = SimpleNamespace(_ensure_session_db=lambda: None)
         def create(code):
-            return namespace["_create_agent"](owner, ephemeral_system_prompt="same-chart-and-instructions", session_id="same-context", dialogue_model_code=code)
+            return namespace["_create_agent"](owner, ephemeral_system_prompt="same-chart-and-instructions", session_id="same-context", dialogue_model_code=code,
+                                               strict_context_only=True, managed_continuation=True,
+                                               managed_response_format={"type": "json_object"})
         with patch.dict(os.environ, ENABLED), patch.dict("sys.modules", {"run_agent": run_agent, "gateway.run": gateway, "hermes_cli.tools_config": tools}):
             with ThreadPoolExecutor(max_workers=2) as executor:
                 luna, deepseek = list(executor.map(create, ["gpt_luna", "deepseek_flash"]))
@@ -117,6 +118,13 @@ class PatchedConstructorTests(unittest.TestCase):
         self.assertEqual(luna.session_id, deepseek.session_id)
         self.assertIsNone(luna.fallback_model)
         self.assertEqual(luna.max_tokens, deepseek.max_tokens)
+        for agent in (luna, deepseek):
+            self.assertEqual(agent.request_overrides["response_format"], {"type": "json_object"})
+            self.assertEqual(agent.max_iterations, 3)
+            self.assertEqual(agent.enabled_toolsets, [])
+            self.assertIsNone(agent.session_db)
+            self.assertTrue(agent.skip_context_files)
+            self.assertTrue(agent.skip_memory)
 
 
 if __name__ == "__main__":
