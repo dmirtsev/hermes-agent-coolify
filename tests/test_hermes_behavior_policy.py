@@ -38,6 +38,21 @@ class BehaviorPolicyTests(unittest.TestCase):
         self.assertIsNone(one.ephemeral_system_prompt)
         self.assertEqual(two._cached_system_prompt, "other")
 
+    def test_free_plain_response_does_not_enable_json_continuation(self):
+        body = fixture()
+        body["tp_dialogue_mode"] = "free_dialogue"
+        self.assertEqual(validate_behavior_policy(body, "free-1"), body["tp_hermes_policy"])
+        free, standard = SimpleNamespace(), SimpleNamespace()
+        install_managed_system_prompt(free, "Free")
+        install_managed_system_prompt(standard, "Standard", {"type": "json_object"})
+        self.assertFalse(free._tp_managed_json)
+        self.assertTrue(standard._tp_managed_json)
+        self.assertEqual(free._cached_system_prompt, "Free")
+        for invalid in ("creative", None, {}, []):
+            body["tp_dialogue_mode"] = invalid
+            with self.assertRaisesRegex(ValueError, "dialogue_mode_invalid"):
+                validate_behavior_policy(body, "free-1")
+
     def test_legacy_request_is_unchanged(self):
         self.assertIsNone(validate_behavior_policy({"messages": []}, None))
         with self.assertRaises(ValueError):

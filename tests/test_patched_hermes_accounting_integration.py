@@ -319,6 +319,19 @@ class PatchedHermesAccountingIntegrationTests(unittest.TestCase):
         self.assertEqual(adapter._run_agent.await_args.kwargs["managed_system_prompt"], prompt)
         self.assertEqual(adapter._run_agent.await_args.kwargs["managed_response_format"], {"type": "json_object"})
         self.assertTrue(adapter._run_agent.await_args.kwargs["strict_context_only"])
+        self.assertEqual(response.headers["X-Hermes-System-Sha256"], policy["system_sha256"])
+        self.assertEqual(response.headers["X-Hermes-Dialogue-Mode"], "standard")
+        adapter._run_agent.reset_mock()
+        body["tp_dialogue_mode"] = "free_dialogue"
+        del body["response_format"]
+        with patch("gateway.platforms.api_server.durable_begin_request", return_value={"state": "received"}), \
+             patch("gateway.platforms.api_server.durable_complete_request"):
+            free_response = asyncio.run(adapter._handle_chat_completions(Request()))
+        self.assertEqual(free_response.status, 200)
+        self.assertEqual(free_response.headers["X-Hermes-Dialogue-Mode"], "free_dialogue")
+        self.assertEqual(free_response.headers["X-Hermes-System-Sha256"], policy["system_sha256"])
+        self.assertIsNone(adapter._run_agent.await_args.kwargs["managed_response_format"])
+        self.assertEqual(adapter._run_agent.await_args.kwargs["managed_system_prompt"], prompt)
         body["messages"][0]["content"] = "changed without matching digest"
         rejected = asyncio.run(adapter._handle_chat_completions(Request()))
         self.assertEqual(rejected.status, 400)
