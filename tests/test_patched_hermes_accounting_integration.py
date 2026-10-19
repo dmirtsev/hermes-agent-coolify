@@ -62,6 +62,22 @@ class PatchedHermesAccountingIntegrationTests(unittest.TestCase):
         self.assertTrue(captured["skip_context_files"])
         self.assertTrue(captured["skip_memory"])
 
+    def test_deepseek_profile_sets_one_app_retry_without_constructor_retry_kwargs(self) -> None:
+        from gateway.platforms.api_server import APIServerAdapter
+
+        created = []
+        class CapturingAgent:
+            def __init__(self, **kwargs):
+                self.kwargs = kwargs
+                created.append(self)
+        adapter = object.__new__(APIServerAdapter)
+        adapter._session_db = None
+        with patch("run_agent.AIAgent", CapturingAgent), patch("gateway.run._resolve_runtime_agent_kwargs", return_value={"provider": "openrouter", "base_url": "https://openrouter.ai/api/v1"}), patch("gateway.run._resolve_gateway_model", return_value="deepseek/deepseek-v4-flash"), patch("gateway.run._load_gateway_config", return_value={}), patch("gateway.run.GatewayRunner._load_reasoning_config", return_value={}), patch("gateway.run.GatewayRunner._load_fallback_model", return_value=None), patch("hermes_cli.tools_config._get_platform_tools", return_value=[]), patch.dict(os.environ, {"HERMES_DIALOGUE_MODEL_CHOICE_ENABLED":"true", "HERMES_RUNTIME_TIER":"economy", "HERMES_FIXED_MODEL_PROVIDER":"openrouter"}):
+            adapter._create_agent(dialogue_model_code="deepseek_flash")
+        self.assertEqual(created[0].kwargs["model"], "deepseek/deepseek-v4-flash")
+        self.assertNotIn("max_retries", created[0].kwargs)
+        self.assertEqual(created[0]._api_max_retries, 1)
+
     def test_managed_strict_agent_has_only_bounded_continuation_budget(self) -> None:
         from gateway.platforms.api_server import APIServerAdapter
 
@@ -1024,6 +1040,51 @@ class PatchedHermesAccountingIntegrationTests(unittest.TestCase):
         )
         self.assertEqual(view["state"], "provider_rejected_unbilled")
         self.assertFalse(view["terminal_outcome"]["billable"])
+
+    def test_deepseek_transient_429_replays_failed_pending(self) -> None:
+        from agent.durable_accounting import get_request_view, record_unresolved_evidence
+        from gateway.platforms.api_server import APIServerAdapter
+
+        class Provider429(RuntimeError):
+            status_code = 429
+            body = {"error": {"metadata": {"provider_name": "DeepInfra"}}}
+
+        adapter = object.__new__(APIServerAdapter)
+        adapter._api_key = ""
+        adapter._model_name = "hermes-agent"
+        adapter._check_auth = lambda request: None
+        calls = {"count": 0}
+
+        async def run_agent(**kwargs):
+            calls["count"] += 1
+            self.assertTrue(record_unresolved_evidence(
+                "provider_attempt_failed", "deepseek/deepseek-v4-flash",
+                request_key=kwargs["accounting_request_key"],
+            ))
+            raise Provider429("provider rate limited")
+
+        adapter._run_agent = run_agent
+
+        class Request:
+            headers = {"Idempotency-Key": "deepseek-429-replay-test"}
+            async def json(self):
+                return {"model": "hermes-agent", "messages": [{"role": "user", "content": "test"}], "stream": False}
+
+        with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {"HERMES_ACCOUNTING_JOURNAL_PATH": str(Path(directory) / "journal.sqlite3"), "HERMES_RUNTIME_TIER": "economy", "HERMES_RUNTIME_ID": "hermes-test-economy"}, clear=False):
+            first_response = asyncio.run(adapter._handle_chat_completions(Request()))
+            second_response = asyncio.run(adapter._handle_chat_completions(Request()))
+            view = get_request_view("deepseek-429-replay-test")
+
+        first = json.loads(first_response.text)
+        self.assertEqual(first_response.status, 503)
+        self.assertEqual(first["error"]["code"], "provider_temporarily_unavailable")
+        self.assertEqual(first["error"]["hermes"]["dispatch_outcome"], "dispatch_unknown")
+        self.assertEqual(first["error"]["hermes"]["billing_state"], "pending")
+        self.assertEqual(view["state"], "failed")
+        self.assertTrue(view["evidence"]["has_unresolved_attempt"])
+        self.assertEqual(second_response.status, 503)
+        self.assertEqual(second_response.headers["X-Hermes-Idempotency-Replayed"], "true")
+        self.assertEqual(calls["count"], 1)
 
     def test_non_streaming_responses_api_exposes_same_accounting_contract(self) -> None:
         from agent.openrouter_accounting import build_openrouter_accounting, record_openrouter_response

@@ -40,6 +40,20 @@ class ProviderError(RuntimeError):
         self.body = body
 
 
+class ProviderResponse:
+    def __init__(self, status_code=429):
+        self.status_code = status_code
+        self.headers = {"retry-after": "3"}
+
+
+class DeepSeekTransientError(RuntimeError):
+    def __init__(self, status_code=429):
+        super().__init__("provider temporarily unavailable")
+        self.status_code = status_code
+        self.response = ProviderResponse(status_code)
+        self.body = {"error": {"metadata": {"provider_name": "DeepInfra"}}}
+
+
 def _openrouter_credit_error() -> ProviderError:
     return ProviderError(
         402,
@@ -467,6 +481,20 @@ class DurableAccountingTests(unittest.TestCase):
             durable.get_request_view(keys[1])["evidence"]["generation_ids"],
             ["gen-b"],
         )
+
+    def test_transient_provider_failure_is_failed_pending_and_replayable(self):
+        with tempfile.TemporaryDirectory() as folder, patch.dict(os.environ, {"HERMES_ACCOUNTING_JOURNAL_PATH": str(Path(folder) / "j.sqlite3")}):
+            key = "transient-key"
+            digest = _payload("transient")
+            self.assertEqual(durable.begin_request(key, digest)["state"], "claimed")
+            result, _ = durable.complete_provider_dispatch_unknown(key, digest, DeepSeekTransientError())
+            self.assertEqual(result["_hermes_terminal_error"]["dispatch_outcome"], "dispatch_unknown")
+            self.assertEqual(durable.get_request_view(key)["state"], "failed")
+            self.assertIsNone(durable.get_request_view(key)["accounting"])
+            self.assertEqual(durable.get_request_view(key)["failure_code"], "provider_temporarily_unavailable")
+            replay = durable.begin_request(key, digest)
+            self.assertEqual(replay["state"], "failed")
+            self.assertEqual(replay["result"]["_hermes_terminal_error"]["dispatch_outcome"], "dispatch_unknown")
 
 
 if __name__ == "__main__":
