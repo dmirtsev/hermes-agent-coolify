@@ -190,6 +190,7 @@ replace_once(
     "from agent.durable_accounting import (\n"
     "    current_request_key,\n"
     "    is_openrouter_resource_exhaustion,\n"
+    "    provider_failure_details,\n"
     ")\n",
     "conversation accounting import",
 )
@@ -314,7 +315,7 @@ replace_once(
 ''',
     '''                    if (
                         current_request_key() is not None
-                        and is_openrouter_resource_exhaustion(api_error)
+                        and (is_openrouter_resource_exhaustion(api_error) or provider_failure_details(api_error))
                     ):
                         raise api_error
                     return {
@@ -341,7 +342,7 @@ replace_once(
 ''',
     '''                    if (
                         current_request_key() is not None
-                        and is_openrouter_resource_exhaustion(api_error)
+                        and (is_openrouter_resource_exhaustion(api_error) or provider_failure_details(api_error))
                     ):
                         raise api_error
                     return {
@@ -651,6 +652,7 @@ from agent.durable_accounting import (
     RequestUnresolvedError as DurableRequestUnresolvedError,
     begin_request as durable_begin_request,
     complete_provider_rejected_unbilled as durable_complete_provider_rejected_unbilled,
+    complete_provider_dispatch_unknown as durable_complete_provider_dispatch_unknown,
     complete_request as durable_complete_request,
     durable_agent_request_scope,
     fail_request as durable_fail_request,
@@ -1044,7 +1046,7 @@ replace_once(
                     status=503,
                 )
 
-            if decision["state"] == "completed":
+            if decision["state"] in {"completed", "failed"}:
                 result, usage = decision["result"], decision["usage"]
                 durable_replayed = True
             else:
@@ -1058,9 +1060,13 @@ replace_once(
                 except Exception as error:
                     terminal_result = None
                     try:
-                        terminal_result = durable_complete_provider_rejected_unbilled(
+                        terminal_result = durable_complete_provider_dispatch_unknown(
                             idempotency_key, payload_sha256, error
                         )
+                        if terminal_result is None:
+                            terminal_result = durable_complete_provider_rejected_unbilled(
+                                idempotency_key, payload_sha256, error
+                            )
                     except (DurableJournalError, sqlite3.Error, OSError):
                         logger.exception(
                             "Durable provider rejection completion failed"
@@ -1107,12 +1113,12 @@ replace_once(
         if (
             isinstance(terminal_error, dict)
             and terminal_error.get("code") == "provider_temporarily_unavailable"
-            and terminal_error.get("dispatch_outcome") == "provider_rejected_unbilled"
+            and terminal_error.get("dispatch_outcome") in {"provider_rejected_unbilled", "dispatch_unknown"}
         ):
             response_headers = {
                 "X-Hermes-Session-Id": result.get("session_id", session_id),
                 "X-Hermes-Completed": "false",
-                "X-Hermes-Dispatch-Outcome": "provider_rejected_unbilled",
+                "X-Hermes-Dispatch-Outcome": terminal_error.get("dispatch_outcome"),
             }
             if durable_replayed:
                 response_headers["X-Hermes-Idempotency-Replayed"] = "true"
@@ -1127,7 +1133,11 @@ replace_once(
                 "completed": False,
                 "partial": False,
                 "failed": True,
-                "dispatch_outcome": "provider_rejected_unbilled",
+                "dispatch_outcome": terminal_error.get("dispatch_outcome"),
+                "billing_state": terminal_error.get("billing_state", "pending"),
+                "upstream_status": terminal_error.get("upstream_status"),
+                "provider": terminal_error.get("provider"),
+                "retry_after": terminal_error.get("retry_after"),
             }
             return web.json_response(err_body, status=503, headers=response_headers)
 

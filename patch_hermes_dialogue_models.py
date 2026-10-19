@@ -52,5 +52,8 @@ replace('''                    strict_context_only=strict_context_only,
                     managed_response_format=managed_response_format,''', "agent profile argument")
 replace('''            "release": _wrapper_release_evidence(),''', '''            "release": _wrapper_release_evidence(),
             "dialogue_models": public_dialogue_models(),''', "public capability", count=2)
+replace("        return agent\n", "        if dialogue_model_code == 'deepseek_flash':\n"
+        "            agent._api_max_retries = 1\n"
+        "        return agent\n", "per-agent retry budget")
 compile(source, str(target), "exec")
 target.write_text(source)
