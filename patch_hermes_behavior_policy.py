@@ -95,7 +95,7 @@ replace(
 replace(
     '''            if sourced_text_only:
 ''',
-    '''            install_managed_system_prompt(agent, managed_system_prompt)
+    '''            install_managed_system_prompt(agent, managed_system_prompt, managed_response_format)
             if sourced_text_only:
 ''',
     "system replacement",
@@ -109,6 +109,8 @@ replace(
         if managed_policy is not None:
             response_headers["X-Hermes-Policy-Id"] = managed_policy["version_id"]
             response_headers["X-Hermes-Policy-Sha256"] = managed_policy["sha256"]
+            response_headers["X-Hermes-System-Sha256"] = managed_policy["system_sha256"]
+            response_headers["X-Hermes-Dialogue-Mode"] = body.get("tp_dialogue_mode", "standard")
 ''',
     "receipt",
 )

@@ -10,7 +10,11 @@ import os
 from copy import deepcopy
 
 PROFILES = {
-    "deepseek_flash": {"model": "deepseek/deepseek-v4-flash", "provider": "deepinfra/fp8"},
+    "deepseek_flash": {
+        "model": "deepseek/deepseek-v4-flash",
+        "providers": ["deepinfra/fp8", "gmicloud/fp8"],
+        "max_price": {"prompt": 0.5, "completion": 1.5},
+    },
     "gpt_luna": {"model": "openai/gpt-6-luna", "provider": "openai"},
 }
 
@@ -61,7 +65,19 @@ def dialogue_agent_settings(code, runtime_kwargs, model, reasoning_config, fallb
     extra = overrides.setdefault("extra_body", {})
     for key in ("models", "route", "reasoning"):
         extra.pop(key, None)
-    extra["provider"] = {"only": [profile["provider"]], "allow_fallbacks": False}
+    if code == "deepseek_flash":
+        # OpenRouter may fail over only between the two approved endpoints for
+        # this exact model; no other model or provider is admissible.
+        extra["provider"] = {
+            "order": list(profile["providers"]),
+            "only": list(profile["providers"]),
+            "allow_fallbacks": True,
+            "max_price": dict(profile["max_price"]),
+        }
+        # The outer conversation loop owns retries for this route.  Keep the
+        # SDK from multiplying a provider failure inside each attempt.
+    else:
+        extra["provider"] = {"only": ["openai"], "allow_fallbacks": False}
     extra["service_tier"] = "default"
     kwargs["max_tokens"] = 8192
     return kwargs, profile["model"], {"effort": "high"}, None

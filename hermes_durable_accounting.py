@@ -355,6 +355,16 @@ def begin_request(request_key: str, payload_sha256: str) -> dict[str, Any]:
             }
         connection.rollback()
         if state == "failed":
+            result = _load(row["result_json"])
+            usage = _load(row["usage_json"])
+            terminal = result.get("_hermes_terminal_error") if isinstance(result, dict) else None
+            if (
+                row["failure_code"] == PROVIDER_TEMPORARILY_UNAVAILABLE
+                and isinstance(terminal, dict)
+                and terminal.get("dispatch_outcome") == "dispatch_unknown"
+                and isinstance(usage, dict)
+            ):
+                return {"state": "failed", "requestKey": request_key, "result": result, "usage": usage}
             raise RequestUnresolvedError(row["failure_code"] or "request_unresolved")
         raise RequestInFlightError("request_in_flight")
 
@@ -475,6 +485,70 @@ def is_openrouter_resource_exhaustion(error: BaseException) -> bool:
         isinstance(metadata, dict)
         and metadata.get("limit_source") == "openrouter_credits"
     )
+
+
+def provider_failure_details(error: BaseException) -> dict[str, Any] | None:
+    """Return safe upstream failure metadata for transient provider errors."""
+    status = getattr(error, "status_code", None)
+    response = getattr(error, "response", None)
+    if status is None:
+        status = getattr(response, "status_code", None)
+    try:
+        status = int(status)
+    except (TypeError, ValueError):
+        return None
+    if status != 429 and not 500 <= status <= 599:
+        return None
+    body = _provider_error_body(error) or {}
+    payload = body.get("error", body) if isinstance(body, dict) else {}
+    metadata = payload.get("metadata", {}) if isinstance(payload, dict) else {}
+    provider = None
+    if isinstance(metadata, dict):
+        provider = metadata.get("provider_name") or metadata.get("provider")
+    provider = provider or getattr(error, "provider", None)
+    retry_after = getattr(response, "headers", {}).get("retry-after") if response is not None else None
+    return {
+        "upstream_status": status,
+        "provider": str(provider).strip() if provider else None,
+        "retry_after": str(retry_after).strip() if retry_after else None,
+    }
+
+
+def complete_provider_dispatch_unknown(
+    request_key: str, payload_sha256: str, error: BaseException
+) -> tuple[dict[str, Any], dict[str, Any]] | None:
+    """Durably fail a transient provider rejection; billing remains pending."""
+    details = provider_failure_details(error)
+    if details is None:
+        return None
+    request_key = normalize_request_key(request_key)
+    if not isinstance(payload_sha256, str) or len(payload_sha256) != 64:
+        raise JournalError("invalid_payload_sha256")
+    result = {
+        "final_response": "",
+        "completed": False,
+        "failed": True,
+        "_hermes_terminal_error": {
+            "code": PROVIDER_TEMPORARILY_UNAVAILABLE,
+            "dispatch_outcome": "dispatch_unknown",
+            "billing_state": "pending",
+            **details,
+        },
+    }
+    usage = {k: 0 for k in ("input_tokens", "output_tokens", "total_tokens", "cache_read_tokens", "cache_write_tokens", "reasoning_tokens")}
+    with contextlib.closing(_connect()) as connection:
+        connection.execute("BEGIN IMMEDIATE")
+        row = connection.execute("SELECT payload_sha256, state FROM accounting_request WHERE request_key = ?", (request_key,)).fetchone()
+        if row is None:
+            connection.rollback(); raise RequestNotFoundError("request_not_found")
+        if row["payload_sha256"] != payload_sha256:
+            connection.rollback(); raise RequestConflictError("idempotency_payload_conflict")
+        if row["state"] != "in_flight":
+            connection.rollback(); raise RequestUnresolvedError("request_unresolved")
+        now = _now()
+        connection.execute("UPDATE accounting_request SET state='failed', result_json=?, usage_json=?, failure_code=?, updated_at=?, completed_at=NULL, configured_provider=COALESCE(configured_provider,'openrouter') WHERE request_key=?", (_dump(result), _dump(usage), PROVIDER_TEMPORARILY_UNAVAILABLE, now, request_key))
+        connection.commit()
+    return result, usage
 
 
 def complete_provider_rejected_unbilled(

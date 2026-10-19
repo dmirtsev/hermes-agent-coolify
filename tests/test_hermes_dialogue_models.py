@@ -38,7 +38,7 @@ class DialogueModelsTests(unittest.TestCase):
         with self.assertRaises(models.DialogueModelError):
             models.validate_dialogue_model({"tp_dialogue_model": "arbitrary"}, "stable-request", ENABLED)
 
-    def test_profiles_are_per_request_and_do_not_clone_credentials_or_allow_fallbacks(self):
+    def test_profiles_are_per_request_and_pin_only_approved_routes(self):
         credentials = threading.Lock()
         kwargs = {"provider": "openrouter", "base_url": "https://openrouter.ai/api/v1", "credential_pool": credentials,
                   "request_overrides": {"extra_body": {"models": ["other/model"], "provider": {"only": ["old-provider"]}}}}
@@ -48,7 +48,12 @@ class DialogueModelsTests(unittest.TestCase):
         self.assertIs(one[0]["credential_pool"], credentials)
         self.assertEqual(kwargs["request_overrides"]["extra_body"]["provider"]["only"], ["old-provider"])
         self.assertEqual(one[0]["request_overrides"]["extra_body"]["provider"], {"only": ["openai"], "allow_fallbacks": False})
-        self.assertEqual(two[0]["request_overrides"]["extra_body"]["provider"]["only"], ["deepinfra/fp8"])
+        self.assertEqual(two[0]["request_overrides"]["extra_body"]["provider"], {
+            "order": ["deepinfra/fp8", "gmicloud/fp8"],
+            "only": ["deepinfra/fp8", "gmicloud/fp8"],
+            "allow_fallbacks": True,
+            "max_price": {"prompt": 0.5, "completion": 1.5},
+        })
         self.assertNotIn("models", one[0]["request_overrides"]["extra_body"])
         self.assertEqual(one[1:], ("openai/gpt-6-luna", {"effort": "high"}, None))
         self.assertEqual(one[0]["max_tokens"], two[0]["max_tokens"])
