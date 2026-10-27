@@ -75,6 +75,22 @@ class ContextBudgetTests(unittest.TestCase):
                 "messages": original["messages"] + [{"role": "user", "content": "hidden"}]})
         self.assertEqual(agent._tp_context_model_calls, 0)
 
+    def test_native_accounting_session_must_match_the_isolated_operation(self):
+        original = body()
+        agent = SimpleNamespace(session_id="synthetic-operation")
+        budget.install_context_budget(agent, original)
+        kwargs = {"model": MODEL, "messages": original["messages"], "max_tokens": 8192,
+            "extra_body": {**agent.request_overrides["extra_body"], "provider": {
+                "only": ["openai"], "allow_fallbacks": False, "max_price": budget.PRICE_CAPS[MODEL]},
+                "service_tier": "default", "reasoning": {"effort": "high"},
+                "session_id": agent.session_id}}
+        with patch.object(budget, "prepare_admission", return_value={"admitted": True}):
+            budget.admit_provider_call(agent, kwargs)
+        kwargs["extra_body"]["session_id"] = "another-operation"
+        with self.assertRaisesRegex(budget.ContextBudgetError, "provider_route_changed"):
+            budget.admit_provider_call(agent, kwargs)
+        self.assertEqual(agent._tp_context_model_calls, 1)
+
     def test_agent_uses_the_admitted_window_without_compacting(self):
         original = body()
         original["tp_context_admission"] = {"contextWindow": 1050000}

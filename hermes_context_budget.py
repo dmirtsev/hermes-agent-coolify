@@ -238,7 +238,10 @@ def admit_provider_call(agent, api_kwargs):
             "allow_fallbacks": True, "max_price": PRICE_CAPS[original["model"]]})
     if (extra.get("provider") != expected_provider or extra.get("service_tier") != "default"
             or extra.get("reasoning", {}).get("effort") != "high"
-            or set(extra) - {"provider", "service_tier", "reasoning", "usage"}
+            # The native OpenRouter profile adds accounting metadata. It may
+            # identify this exact isolated operation, never another session.
+            or ("session_id" in extra and extra["session_id"] != getattr(agent, "session_id", None))
+            or set(extra) - {"provider", "service_tier", "reasoning", "usage", "session_id"}
             or api_kwargs.get("response_format") != original.get("response_format")):
         raise ContextBudgetError("hermes_context_provider_route_changed")
     calls = getattr(agent, "_tp_context_model_calls", 0)
