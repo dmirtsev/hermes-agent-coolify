@@ -79,6 +79,7 @@ def dialogue_agent_settings(code, runtime_kwargs, model, reasoning_config, fallb
     else:
         extra["provider"] = {"only": ["openai"], "allow_fallbacks": False}
     extra["service_tier"] = "default"
+    extra["reasoning"] = {"effort": "high"}
     kwargs["max_tokens"] = 8192
     return kwargs, profile["model"], {"effort": "high"}, None
 

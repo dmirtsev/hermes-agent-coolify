@@ -391,6 +391,61 @@ class PatchedHermesAccountingIntegrationTests(unittest.TestCase):
             self.assertEqual(messages[1], {"role": "user", "content": "Current supplied context"})
             self.assertNotIn("FORBIDDEN-OLD", json.dumps(messages))
 
+    def test_budget_preflight_never_claims_or_dispatches(self):
+        from gateway.platforms.api_server import APIServerAdapter
+        prompt = "Count complete managed JSON context."
+        body = {"model": "openai/gpt-6-luna", "tp_dialogue_model": "gpt_luna", "stream": False,
+            "tp_execution_mode": "interpretation_facts_v1", "tp_answer_format": "hermes_managed_v1",
+            "tp_hermes_policy": {"version_id": "v", "version": 1, "sha256": "a" * 64,
+                "system_sha256": hashlib.sha256(prompt.encode()).hexdigest()},
+            "tp_context_budget": {"contract": "hermes-context-budget-v1", "profile": "natal_transit", "inputBudget": 128000},
+            "tp_preflight_only": True, "messages": [{"role": "system", "content": prompt}, {"role": "user", "content": "x" * 200000}]}
+        class Request:
+            headers = {"Authorization": "Bearer gateway-token", "Idempotency-Key": "synthetic-preflight"}
+            async def json(self): return body
+        adapter = object.__new__(APIServerAdapter)
+        adapter._api_key, adapter._model_name = "gateway-token", "test/model"
+        adapter._run_agent = AsyncMock()
+        with patch.dict(os.environ, {"HERMES_DIALOGUE_MODEL_CHOICE_ENABLED": "true", "HERMES_RUNTIME_TIER": "economy", "HERMES_FIXED_MODEL_PROVIDER": "openrouter"}), \
+             patch("gateway.platforms.api_server.prepare_admission", return_value={"admitted": False, "reason": "hermes_context_input_overflow"}), \
+             patch("gateway.platforms.api_server.durable_begin_request") as claim:
+            response = asyncio.run(adapter._handle_chat_completions(Request()))
+        self.assertEqual(response.status, 200)
+        self.assertEqual(json.loads(response.body)["admission"]["reason"], "hermes_context_input_overflow")
+        claim.assert_not_called()
+        adapter._run_agent.assert_not_awaited()
+
+    def test_budget_real_provider_boundary_has_no_hidden_prompt_or_auto_replacement(self):
+        from gateway.platforms.api_server import APIServerAdapter
+        from run_agent import AIAgent
+        prompt = "Published managed JSON policy."
+        supplied = "FULL-CONTEXT " * 18000
+        body = {"model": "openai/gpt-6-luna", "tp_dialogue_model": "gpt_luna", "tp_answer_format": "hermes_managed_v1",
+          "tp_context_budget": {"contract": "hermes-context-budget-v1", "profile": "natal_transit", "inputBudget": 128000},
+          "response_format": {"type": "json_object"}, "messages": [{"role": "system", "content": prompt}, {"role": "user", "content": supplied}]}
+        agent = AIAgent(model=body["model"], provider="openrouter", api_key="synthetic-unused-key", base_url="https://example.invalid/v1",
+          enabled_toolsets=[], max_iterations=3, max_tokens=8192, skip_context_files=True, skip_memory=True, quiet_mode=True,
+          request_overrides={"extra_body": {"provider": {"only": ["openai"], "allow_fallbacks": False}, "service_tier": "default", "reasoning": {"effort": "high"}}},
+          ephemeral_system_prompt="FORBIDDEN-HIDDEN-PROMPT")
+        agent.prefill_messages = []
+        calls = []
+        content = '{"mode":"interpretation","paragraphs":[{"text":"A complete published part.","refs":[]}]}'
+        def fake_call(kwargs, *a, **k):
+            calls.append(kwargs)
+            return SimpleNamespace(id="synthetic-budget",model=body["model"],usage=SimpleNamespace(prompt_tokens=90000,completion_tokens=8192,total_tokens=98192),
+              choices=[SimpleNamespace(finish_reason="length",message=SimpleNamespace(content=content,tool_calls=None,reasoning=None,reasoning_content=None,reasoning_details=None))])
+        agent._interruptible_api_call = fake_call
+        agent._interruptible_streaming_api_call = fake_call
+        adapter = object.__new__(APIServerAdapter); adapter._create_agent = lambda **kwargs: agent
+        with patch("agent.context_budget.prepare_admission", return_value={"admitted": True}):
+            result, _ = asyncio.run(adapter._run_agent(user_message=supplied,conversation_history=[],strict_context_only=True,
+              managed_system_prompt=prompt,managed_response_format=body["response_format"],managed_continuation=True,context_budget_body=body))
+        self.assertEqual(len(calls),1)
+        self.assertEqual(calls[0]["messages"],body["messages"])
+        self.assertEqual(result["final_response"],content)
+        self.assertIn("truncated", result["error"])
+        self.assertFalse(agent.compression_enabled)
+
     def test_managed_length_continuation_joins_json_and_stops_after_two_calls(self) -> None:
         from gateway.platforms.api_server import APIServerAdapter
         from run_agent import AIAgent

@@ -1,0 +1,35 @@
+name: Hermes context budget contract
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: hermes-context-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  pinned-runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Wrapper unit contracts
+        run: python3 -m unittest discover -s tests
+      - name: Build exact pinned runtime
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          docker build --build-arg SOURCE_COMMIT="$SOURCE_SHA" --tag "hermes-context:$SOURCE_SHA" .
+      - name: Verify real patched runtime without external calls
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          docker run --rm --network none \
+            -v "$GITHUB_WORKSPACE:/qa:ro" \
+            -e PYTHONPATH=/opt/hermes:/qa:/qa/tests \
+            --entrypoint /opt/hermes/.venv/bin/python \
+            "hermes-context:$SOURCE_SHA" -m unittest discover -s /qa/tests
