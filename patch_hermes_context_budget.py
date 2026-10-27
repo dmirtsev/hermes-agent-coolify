@@ -73,6 +73,12 @@ replace(api,
     "managed method already present in counted messages")
 loop = root / "agent/conversation_loop.py"
 replace(loop,
+    '            if isinstance(am.get("content"), str):\n'
+    '                am["content"] = am["content"].strip()\n',
+    '            if isinstance(am.get("content"), str) and getattr(agent, "_tp_context_budget_body", None) is None:\n'
+    '                am["content"] = am["content"].strip()\n',
+    "preserve byte-exact counted message whitespace")
+replace(loop,
     'from agent.usage_pricing import estimate_usage_cost, normalize_usage\n',
     'from agent.usage_pricing import estimate_usage_cost, normalize_usage\n'
     'from agent.context_budget import admit_provider_call, readable_managed_part\n', "provider guard import")
