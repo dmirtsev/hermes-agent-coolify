@@ -138,6 +138,18 @@ class VersionedMethodGuardTests(unittest.TestCase):
             self.assertTrue(strict_context_active())
         self.assertFalse(strict_context_active())
 
+    def test_full_context_keeps_all_intervals_and_untrimmed_history(self):
+        reading = fixture()
+        reading["calculation"]["factRefs"] = [f"band-{i}" for i in range(730)]
+        reading["calculation"]["facts"] = [{"fact_id": ref} for ref in reading["calculation"]["factRefs"]]
+        reading["memory_context"]["selection_policy"] = "full_non_mock_same_context"
+        reading["memory_context"]["items"] = [{"memory_item_ref": f"m-{i}", "role": "user", "content": "  " + "Длинная история " * 300 + "  ", "created_at": "2026-10-27T00:00:00Z"} for i in range(70)]
+        guard = prepare_versioned_method_context(reading, full_context=True)
+        self.assertEqual(guard.receipt["prompt_contract_version"], "1.3.0")
+        self.assertEqual(len(guard.receipt["authorized_memory_item_refs"]), 70)
+        self.assertIn("band-729", guard.prompt)
+        self.assertIn(reading["memory_context"]["items"][0]["content"], guard.prompt)
+
     def test_builds_exact_receipt_and_closed_prompt(self):
         guard = prepare_versioned_method_context(fixture())
         self.assertEqual(guard.receipt["family_id"], "tp.transit.period_guidance")

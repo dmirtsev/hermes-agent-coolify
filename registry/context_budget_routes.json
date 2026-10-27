@@ -1,0 +1,22 @@
+{
+  "openai/gpt-6-luna": {
+    "route": "openrouter:openai:gpt-6-luna:high:json-or-text-v1",
+    "counter": "tiktoken:o200k_base",
+    "counterRevision": "tiktoken0.14.0:regex2026.9.29:two-text-messages-v1:text-2-or-3:calibration20261027",
+    "contextWindow": 1050000,
+    "accuracy": "calibrated",
+    "framingUpperCorrection": 0,
+    "evidenceSha256": "69bee62201ff962eeee2c5c99441fb3593a0ce4bad09a1e2f815fd0d3e7424e1",
+    "evidenceFile": "context_budget_calibration_20261027.json"
+  },
+  "deepseek/deepseek-v4-flash": {
+    "route": "openrouter:deepinfra-fp8,gmicloud-fp8:deepseek-v4-flash:high:json-or-text-v1",
+    "counter": "deepseek-v4-reference",
+    "counterRevision": "60d8d70770c6776ff598c94bb586a859a38244f1:text-2-or-3:calibration20261027",
+    "contextWindow": 1048576,
+    "accuracy": "calibrated",
+    "framingUpperCorrection": 128,
+    "evidenceSha256": "69bee62201ff962eeee2c5c99441fb3593a0ce4bad09a1e2f815fd0d3e7424e1",
+    "evidenceFile": "context_budget_calibration_20261027.json"
+  }
+}

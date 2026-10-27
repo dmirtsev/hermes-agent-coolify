@@ -36,6 +36,11 @@ COPY hermes_versioned_methods.py /opt/hermes/agent/versioned_methods.py
 COPY hermes_sourced_text.py /opt/hermes/agent/sourced_text.py
 COPY hermes_dialogue_models.py /opt/hermes/agent/dialogue_models.py
 COPY hermes_behavior_policy.py /opt/hermes/agent/behavior_policy.py
+COPY hermes_context_budget.py /opt/hermes/agent/context_budget.py
+COPY registry/context_budget_routes.json /opt/hermes/agent/context_budget_routes.json
+COPY registry/context_budget_calibration_20261027.json /opt/hermes/agent/context_budget_calibration_20261027.json
+COPY scripts/install_context_tokenizers.py /opt/hermes-wrapper/install_context_tokenizers.py
+COPY patch_hermes_context_budget.py /opt/hermes-wrapper/patch_hermes_context_budget.py
 COPY patch_hermes_behavior_policy.py /opt/hermes-wrapper/patch_hermes_behavior_policy.py
 COPY patch_hermes_dialogue_models.py /opt/hermes-wrapper/patch_hermes_dialogue_models.py
 COPY patch_hermes_health.py /opt/hermes-wrapper/patch_hermes_health.py
@@ -56,6 +61,7 @@ RUN chmod +x /opt/hermes/tp_knowledge_mcp_setup.sh && \
     /opt/hermes/.venv/bin/python /opt/hermes-wrapper/patch_hermes_openrouter_accounting.py && \
     /opt/hermes/.venv/bin/python /opt/hermes-wrapper/patch_hermes_behavior_policy.py && \
     /opt/hermes/.venv/bin/python /opt/hermes-wrapper/patch_hermes_dialogue_models.py && \
+    /opt/hermes/.venv/bin/python /opt/hermes-wrapper/patch_hermes_context_budget.py && \
     rm -f /etc/s6-overlay/s6-rc.d/user/contents.d/dashboard && \
     printf '%s\n' \
       '#!/command/with-contenv sh' \
@@ -76,6 +82,11 @@ RUN printf '%s\n' \
       'exec /opt/hermes/hermes_curator_setup.sh' \
       > /etc/cont-init.d/03-hermes-curator && \
     chmod +x /etc/cont-init.d/03-hermes-curator
+
+# Public, pinned encoders. Download once while building; counting is offline.
+ENV TIKTOKEN_CACHE_DIR=/opt/hermes/tokenizers/tiktoken-cache
+RUN uv pip install --python /opt/hermes/.venv/bin/python --no-cache-dir tiktoken==0.14.0 tokenizers==0.23.3 regex==2026.9.29 && \
+    /opt/hermes/.venv/bin/python /opt/hermes-wrapper/install_context_tokenizers.py
 
 ENTRYPOINT ["/init", "/opt/hermes/hermes_main_wrapper.sh"]
 # Run one foreground gateway; the patched reconciler registers the s6 slot but
