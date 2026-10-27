@@ -1,5 +1,7 @@
 name: Hermes context budget contract
 on:
+  push:
+    branches: [codex/hermes-transit-context-20261027]
   workflow_dispatch:
 permissions:
   contents: read
@@ -28,7 +30,7 @@ jobs:
           SOURCE_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          docker run --rm --network none \
+          docker run --rm --network none --workdir /qa \
             -v "$GITHUB_WORKSPACE:/qa:ro" \
             -e PYTHONPATH=/opt/hermes:/qa:/qa/tests \
             --entrypoint /opt/hermes/.venv/bin/python \
