@@ -425,7 +425,7 @@ class PatchedHermesAccountingIntegrationTests(unittest.TestCase):
           "response_format": {"type": "json_object"}, "messages": [{"role": "system", "content": prompt}, {"role": "user", "content": supplied}]}
         agent = AIAgent(model=body["model"], provider="openrouter", api_key="synthetic-unused-key", base_url="https://example.invalid/v1",
           enabled_toolsets=[], max_iterations=3, max_tokens=8192, skip_context_files=True, skip_memory=True, quiet_mode=True,
-          request_overrides={"extra_body": {"provider": {"only": ["openai"], "allow_fallbacks": False}, "service_tier": "default", "reasoning": {"effort": "high"}}},
+          request_overrides={"response_format": body["response_format"], "extra_body": {"provider": {"only": ["openai"], "allow_fallbacks": False}, "service_tier": "default", "reasoning": {"effort": "high"}}},
           ephemeral_system_prompt="FORBIDDEN-HIDDEN-PROMPT")
         agent.prefill_messages = []
         calls = []
@@ -961,7 +961,7 @@ class PatchedHermesAccountingIntegrationTests(unittest.TestCase):
         self.assertEqual(payload["hermes_accounting"]["model_execution"]["configured_model"], "fixed/configured-model")
         self.assertEqual(payload["hermes_accounting"]["model_execution"]["provider_reported_models"], ["executed/provider-model"])
         self.assertEqual(payload["hermes_accounting"]["cost"]["amount_micro_usd"], 10)
-        schema = json.loads((Path("/repo") / "deploy/hermes-tiers/usage-result.schema.json").read_text(encoding="utf-8"))
+        schema = json.loads((Path(__file__).resolve().parents[1] / "deploy/hermes-tiers/usage-result.schema.json").read_text(encoding="utf-8"))
         jsonschema.Draft202012Validator.check_schema(schema)
         jsonschema.validate(payload["hermes_accounting"], schema)
 
