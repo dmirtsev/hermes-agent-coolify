@@ -441,6 +441,7 @@ class PatchedHermesAccountingIntegrationTests(unittest.TestCase):
             result, _ = asyncio.run(adapter._run_agent(user_message=supplied,conversation_history=[],strict_context_only=True,
               managed_system_prompt=prompt,managed_response_format=body["response_format"],managed_continuation=True,context_budget_body=body))
         self.assertEqual(len(calls),1)
+        self.assertEqual(calls[0]["extra_body"]["session_id"], agent.session_id)
         self.assertEqual(calls[0]["messages"],body["messages"])
         self.assertEqual(result["final_response"],content)
         self.assertIn("truncated", result["error"])
