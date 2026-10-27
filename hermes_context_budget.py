@@ -188,6 +188,14 @@ def install_context_budget(agent, body):
         provider = overrides.setdefault("extra_body", {}).setdefault("provider", {})
         provider["max_price"] = PRICE_CAPS[body["model"]]
         agent.request_overrides = overrides
+        # A stale/unknown upstream metadata cache must not impose a smaller
+        # window than the already validated route receipt.
+        window = (body.get("tp_context_admission") or {}).get("contextWindow")
+        if type(window) is int and window > OUTPUT_TOKENS:
+            agent._config_context_length = window
+            compressor = getattr(agent, "context_compressor", None)
+            if compressor is not None:
+                compressor.context_length = window
 
 
 def readable_managed_part(content, managed_json):

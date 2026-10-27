@@ -75,6 +75,15 @@ class ContextBudgetTests(unittest.TestCase):
                 "messages": original["messages"] + [{"role": "user", "content": "hidden"}]})
         self.assertEqual(agent._tp_context_model_calls, 0)
 
+    def test_agent_uses_the_admitted_window_without_compacting(self):
+        original = body()
+        original["tp_context_admission"] = {"contextWindow": 1050000}
+        agent = SimpleNamespace(context_compressor=SimpleNamespace(context_length=8192))
+        budget.install_context_budget(agent, original)
+        self.assertEqual(agent.context_compressor.context_length, 1050000)
+        self.assertFalse(agent.compression_enabled)
+        self.assertEqual(agent.request_overrides["extra_body"]["provider"]["max_price"], budget.PRICE_CAPS[MODEL])
+
     def test_committed_route_evidence_is_complete_and_tamper_checked(self):
         from pathlib import Path
         with patch.object(budget, "CERTIFICATES", Path("registry/context_budget_routes.json")):
