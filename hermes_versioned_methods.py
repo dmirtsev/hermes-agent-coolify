@@ -128,19 +128,20 @@ def _require_provenance_sources(value: Any) -> list[dict[str, Any]]:
     return normalized
 
 
-def _require_authorized_memory(value: Any, *, expected_scope: str) -> dict[str, Any]:
+def _require_authorized_memory(value: Any, *, expected_scope: str, full_context: bool = False) -> dict[str, Any]:
     memory = _require_mapping(value, "memory_context")
     if memory.get("schema_version") != 1:
         raise VersionedMethodContextError("unsupported memory_context schema")
     if memory.get("scope") != expected_scope:
         raise VersionedMethodContextError("memory_context scope is outside the reading")
-    if memory.get("selection_policy") != "recent_non_mock_same_context":
+    selection_policy = "full_non_mock_same_context" if full_context else "recent_non_mock_same_context"
+    if memory.get("selection_policy") != selection_policy:
         raise VersionedMethodContextError("memory_context selection policy is invalid")
     conversation_id = _require_string(
         memory.get("conversation_id"), "memory_context.conversation_id"
     )
     items = memory.get("items")
-    if not isinstance(items, list) or len(items) > MAX_MEMORY_ITEMS:
+    if not isinstance(items, list) or (not full_context and len(items) > MAX_MEMORY_ITEMS):
         raise VersionedMethodContextError("memory_context exceeds the item limit")
     normalized_items = []
     refs: set[str] = set()
@@ -154,7 +155,9 @@ def _require_authorized_memory(value: Any, *, expected_scope: str) -> dict[str, 
         if role not in {"user", "assistant"}:
             raise VersionedMethodContextError("memory_context role is invalid")
         content = _require_string(item.get("content"), "memory content")
-        if len(content) > MAX_MEMORY_ITEM_CHARS:
+        if full_context:
+            content = item["content"]
+        if not full_context and len(content) > MAX_MEMORY_ITEM_CHARS:
             raise VersionedMethodContextError("memory_context item is too large")
         normalized_items.append(
             {
@@ -168,17 +171,17 @@ def _require_authorized_memory(value: Any, *, expected_scope: str) -> dict[str, 
         "schema_version": 1,
         "scope": expected_scope,
         "conversation_id": conversation_id,
-        "selection_policy": "recent_non_mock_same_context",
+        "selection_policy": selection_policy,
         "items": normalized_items,
     }
 
 
-def prepare_versioned_method_context(value: Any) -> VersionedMethodGuard | None:
+def prepare_versioned_method_context(value: Any, *, full_context: bool = False) -> VersionedMethodGuard | None:
     if value is None:
         return None
     context = _require_mapping(value, "tp_reading_context")
     encoded = json.dumps(context, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-    if len(encoded.encode("utf-8")) > MAX_CONTEXT_BYTES:
+    if len(encoded.encode("utf-8")) > (16 * 1024 * 1024 if full_context else MAX_CONTEXT_BYTES):
         raise VersionedMethodContextError("tp_reading_context is too large")
     if context.get("schema_version") != 1:
         raise VersionedMethodContextError("unsupported tp_reading_context schema")
@@ -249,7 +252,7 @@ def prepare_versioned_method_context(value: Any) -> VersionedMethodGuard | None:
     facts = calculation.get("facts")
     if not isinstance(facts, list) or len(facts) != len(fact_refs):
         raise VersionedMethodContextError("calculation facts and refs must align")
-    if len(facts) > 48:
+    if not full_context and len(facts) > 48:
         raise VersionedMethodContextError("too many calculation facts")
 
     retrieval_trace_id = _require_string(
@@ -266,6 +269,7 @@ def prepare_versioned_method_context(value: Any) -> VersionedMethodGuard | None:
     authorized_memory = _require_authorized_memory(
         context.get("memory_context"),
         expected_scope=reading_contract["memory_scope"],
+        full_context=full_context,
     )
     if authorized_memory["conversation_id"] != conversation_id:
         raise VersionedMethodContextError(
@@ -331,7 +335,7 @@ def prepare_versioned_method_context(value: Any) -> VersionedMethodGuard | None:
             "version": resolved_ref[1],
             "content_hash": resolved_ref[2],
             "retrieval_trace_id": retrieval_trace_id,
-            "prompt_contract_version": PROMPT_CONTRACT_VERSION,
+            "prompt_contract_version": "1.3.0" if full_context else PROMPT_CONTRACT_VERSION,
             "mixing_policy": mixing_policy,
             "context_isolation": "strict_v1",
             "shared_memory_used": False,
