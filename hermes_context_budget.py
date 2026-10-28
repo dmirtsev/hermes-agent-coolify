@@ -8,6 +8,7 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import logging
 import math
 import os
 from copy import deepcopy
@@ -250,9 +251,12 @@ def managed_completion_action(agent, content):
         return "fail", "managed_transit_validation_unavailable"
     if not issues:
         return "pass", ""
+    logging.getLogger(__name__).warning(
+        "Managed transit validation attempt=%s issues=%s",
+        getattr(agent, "_tp_context_model_calls", 0), "|".join(issues))
     if getattr(agent, "_tp_context_model_calls", 0) >= 3:
         return "fail", "managed_transit_validation_exhausted"
-    feedback = managed_transit_repair_prompt(issues)
+    feedback = managed_transit_repair_prompt(issues, context)
     agent._tp_managed_repair_feedback = feedback
     return "retry", feedback
 

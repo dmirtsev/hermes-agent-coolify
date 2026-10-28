@@ -188,8 +188,23 @@ def managed_transit_issues(content, body_or_context):
     return sorted(issues)
 
 
-def managed_transit_repair_prompt(issues):
+def managed_transit_repair_prompt(issues, context=None):
     codes = ", ".join(sorted(set(issues)))
+    example = ""
+    if context is not None and context.intervals:
+        ref = min(context.intervals, key=lambda value: int(value[1:]))
+        skeleton = {"mode": "interpretation", "paragraphs": [
+            {"text": "{{"+ref+"}}. Сверяйте важные договорённости и оставляйте запас на уточнения.",
+             "refs": [ref]}]}
+        example = (
+            " Исправь ответ по-русски, без заголовка и без даты в свободном тексте. "
+            "Каждый абзац с расчётным основанием начинай существующим маркером и указывай "
+            "тот же ref в refs; затем пиши только качественную трактовку и практический совет. "
+            "Не пиши вне маркеров названия планет, аспектов, направления движения и части суток. "
+            "Не употребляй в свободном тексте слова «повторное», «прохождение» и их формы. "
+            "Пример только формата (основания выбери по исходному вопросу, объём сохрани): "
+            + json.dumps(skeleton, ensure_ascii=False) + "."
+        )
     return (
         "[System repair " + VALIDATION_VERSION + ": The previous draft was not published. "
         "Validation issues: " + codes + ". Return one fresh complete JSON object for the SAME "
@@ -201,5 +216,5 @@ def managed_transit_repair_prompt(issues):
         "begin today. Do not call a pass repeated unless the cited native markers supply at least "
         "two exact instants for that SAME participant/aspect group. A single supplied exact time "
         "is ONE pass. Do not copy or continue the rejected draft. Preserve requested depth; "
-        "the user can request further coherent parts. JSON only.]"
+        "the user can request further coherent parts." + example + " JSON only.]"
     )
