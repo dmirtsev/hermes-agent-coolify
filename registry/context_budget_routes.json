@@ -18,5 +18,15 @@
     "framingUpperCorrection": 128,
     "evidenceSha256": "69bee62201ff962eeee2c5c99441fb3593a0ce4bad09a1e2f815fd0d3e7424e1",
     "evidenceFile": "context_budget_calibration_20261027.json"
+  },
+  "openai/gpt-6.1-terra": {
+    "route": "openrouter:openai:gpt-6.1-terra:medium:json-or-text-v1",
+    "counter": "tiktoken:o200k_base",
+    "counterRevision": "tiktoken0.14.0:regex2026.9.29:text-2-or-3:calibration20261028-terra",
+    "contextWindow": 1050000,
+    "accuracy": "calibrated",
+    "framingUpperCorrection": 0,
+    "evidenceSha256": "872161e5361c325dc2334dc92d3df68edef39685469079097c462f2cc976b98d",
+    "evidenceFile": "context_budget_calibration_terra_20261028.json"
   }
 }

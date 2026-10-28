@@ -28,17 +28,30 @@ replace(api,
 replace(api,
     "from agent.behavior_policy import validate_behavior_policy, install_managed_system_prompt, managed_response_settings\n",
     "from agent.behavior_policy import validate_behavior_policy, install_managed_system_prompt, managed_response_settings\n"
-    "from agent.context_budget import (ContextBudgetError, prepare_admission, require_admission, install_context_budget)\n",
+    "from agent.context_budget import (ContextBudgetError, prepare_admission, require_admission, install_context_budget)\n"
+    "from agent.durable_accounting import is_exact_completed_request as durable_exact_completed_request\n",
     "imports")
 replace(api,
     '        messages = body.get("messages")\n',
     '''        try:
             if body.get("tp_context_budget") is not None and [m.get("role") for m in body.get("messages", [])] != ["system", "user"]:
                 raise ContextBudgetError("hermes_context_initial_messages_invalid")
-            context_admission = prepare_admission(body)
+            # The exact journaled completion can be replayed under its original
+            # admission receipt even after counters or canonicalization change.
+            # begin_request rechecks the digest and can never dispatch it again.
+            exact_completed = (body.get("tp_context_budget") is not None and
+                not body.get("tp_preflight_only") and
+                durable_exact_completed_request(request.headers.get("Idempotency-Key"), body))
+            if exact_completed:
+                context_admission = body.get("tp_context_admission")
+                if not isinstance(context_admission, dict) or context_admission.get("admitted") is not True:
+                    raise ContextBudgetError("hermes_context_admission_mismatch")
+            else:
+                context_admission = prepare_admission(body)
             if body.get("tp_preflight_only"):
                 return web.json_response({"admission": context_admission})
-            require_admission(body, context_admission)
+            if not exact_completed:
+                require_admission(body, context_admission)
         except (ContextBudgetError, OSError, ImportError) as error:
             code = str(error) if isinstance(error, ContextBudgetError) else "hermes_counter_unavailable"
             return web.json_response(_openai_error(code, code=code), status=422)
