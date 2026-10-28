@@ -16,6 +16,7 @@ import hermes_durable_accounting as durable
 from hermes_behavior_policy import managed_response_settings
 
 ENABLED = {"HERMES_DIALOGUE_MODEL_CHOICE_ENABLED": "true", "HERMES_RUNTIME_TIER": "economy", "HERMES_FIXED_MODEL_PROVIDER": "openrouter"}
+TERRA_ENABLED = {**ENABLED, "DEPLOYMENT_ENVIRONMENT": "test", "HERMES_TERRA_PERIODS_ENABLED": "true"}
 
 
 class DialogueModelsTests(unittest.TestCase):
@@ -29,7 +30,9 @@ class DialogueModelsTests(unittest.TestCase):
     def test_validate_choice_before_dispatch(self):
         for code, profile in models.PROFILES.items():
             body = {"model": profile["model"], "tp_dialogue_model": code}
-            self.assertEqual(models.validate_dialogue_model(body, "stable-request", ENABLED), code)
+            if code == "gpt_terra":
+                body.update(tp_context_budget={"profile": "natal_transit"}, tp_managed_method_context={"synthetic": True})
+            self.assertEqual(models.validate_dialogue_model(body, "stable-request", TERRA_ENABLED), code)
             for variant, env in [(body, {}), ({**body, "stream": True}, ENABLED), ({**body, "model": "other/model"}, ENABLED)]:
                 with self.assertRaises(models.DialogueModelError):
                     models.validate_dialogue_model(variant, "stable-request", env)
@@ -70,6 +73,30 @@ class DialogueModelsTests(unittest.TestCase):
             self.assertIsNone(models.public_dialogue_models())
         with patch.dict(os.environ, ENABLED):
             self.assertEqual(models.public_dialogue_models(), {"version": 1, "codes": ["deepseek_flash", "gpt_luna"]})
+        with patch.dict(os.environ, TERRA_ENABLED):
+            self.assertEqual(models.public_dialogue_models(), {"version": 1, "codes": ["deepseek_flash", "gpt_luna", "gpt_terra"]})
+
+    def test_terra_pins_openai_and_medium_reasoning_without_fallback(self):
+        kwargs = {"provider": "openrouter", "base_url": "https://openrouter.ai/api/v1",
+                  "request_overrides": {"extra_body": {"models": ["other/model"]}}}
+        with patch.dict(os.environ, TERRA_ENABLED):
+            result = models.dialogue_agent_settings("gpt_terra", kwargs, "old/model", {}, "fallback")
+        self.assertEqual(result[1:], ("openai/gpt-6.1-terra", {"effort": "medium"}, None))
+        self.assertEqual(result[0]["request_overrides"]["extra_body"]["provider"],
+                         {"only": ["openai"], "allow_fallbacks": False,
+                          "require_parameters": True, "max_price": {"prompt": 2.5, "completion": 7.5}})
+        self.assertEqual(result[0]["request_overrides"]["extra_body"]["reasoning"], {"effort": "medium"})
+        self.assertEqual(result[0]["max_tokens"], 8192)
+
+    def test_terra_is_not_a_production_or_natal_route(self):
+        body = {"model": "openai/gpt-6.1-terra", "tp_dialogue_model": "gpt_terra",
+                "tp_context_budget": {"profile": "natal_transit"}, "tp_managed_method_context": {"synthetic": True}}
+        for change in [{"DEPLOYMENT_ENVIRONMENT": "production"}, {"HERMES_TERRA_PERIODS_ENABLED": "false"}]:
+            with self.assertRaises(models.DialogueModelError):
+                models.validate_dialogue_model(body, "synthetic", {**TERRA_ENABLED, **change})
+        for change in [{"tp_context_budget": {"profile": "natal"}}, {"tp_managed_method_context": None}]:
+            with self.assertRaises(models.DialogueModelError):
+                models.validate_dialogue_model({**body, **change}, "synthetic", TERRA_ENABLED)
 
     def test_journal_replays_one_result_and_rejects_model_change_under_same_key(self):
         with tempfile.TemporaryDirectory() as folder, patch.dict(os.environ, {

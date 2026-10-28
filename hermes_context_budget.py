@@ -11,6 +11,7 @@ import json
 import logging
 import math
 import os
+import re
 from copy import deepcopy
 from functools import lru_cache
 from pathlib import Path
@@ -27,6 +28,8 @@ OUTPUT_TOKENS = 8192
 PRICE_CAPS = {
     "openai/gpt-6-luna": {"prompt": 0.125, "completion": 0.5},
     "deepseek/deepseek-v4-flash": {"prompt": 0.1, "completion": 0.5},
+    # Ceiling in USD/M tokens, kept separate from the provider's live tariff.
+    "openai/gpt-6.1-terra": {"prompt": 2.5, "completion": 7.5},
 }
 ASSETS = Path(os.environ.get("HERMES_TOKENIZER_ASSETS", "/opt/hermes/tokenizers"))
 CERTIFICATES = Path(__file__).with_name("context_budget_routes.json")
@@ -36,8 +39,11 @@ class ContextBudgetError(ValueError):
     pass
 
 
-def canonical(value):
-    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
+# One implementation for admission receipts and durable request digests.
+if __package__:
+    from .durable_accounting import canonical_request_payload as canonical
+else:
+    from hermes_durable_accounting import canonical_request_payload as canonical
 
 
 def digest(value):
@@ -69,6 +75,15 @@ def count_messages(model, messages, response_format=None):
         encoder = tiktoken.get_encoding("o200k_base")
         # Reference estimate only until a route certificate validates this exact
         # two-text-message request shape, framing and JSON mode independently.
+        return 3 + sum(3 + len(encoder.encode(m["role"], disallowed_special=())) +
+                       len(encoder.encode(m["content"], disallowed_special=())) for m in messages)
+    if model == "openai/gpt-6.1-terra":
+        # Independently calibrated Terra framing; see its own route evidence.
+        if ([m["role"] for m in messages] not in (["system", "user"], ["system", "user", "user"])
+                or response_format not in (None, {"type": "json_object"})):
+            raise ContextBudgetError("hermes_counter_uncalibrated_terra_shape")
+        import tiktoken
+        encoder = tiktoken.get_encoding("o200k_base")
         return 3 + sum(3 + len(encoder.encode(m["role"], disallowed_special=())) +
                        len(encoder.encode(m["content"], disallowed_special=())) for m in messages)
     raise ContextBudgetError("hermes_counter_model_unavailable")
@@ -145,7 +160,7 @@ def prepare_admission(body, certificates=None, counter=count_messages):
             body.get("tools") or body.get("stream")):
         raise ContextBudgetError("hermes_context_budget_invalid")
     model = body.get("model")
-    expected_code = {"openai/gpt-6-luna": "gpt_luna", "deepseek/deepseek-v4-flash": "deepseek_flash"}.get(model)
+    expected_code = {"openai/gpt-6-luna": "gpt_luna", "deepseek/deepseek-v4-flash": "deepseek_flash", "openai/gpt-6.1-terra": "gpt_terra"}.get(model)
     if expected_code is None or body.get("tp_dialogue_model") != expected_code:
         raise ContextBudgetError("hermes_context_dialogue_route_required")
     _verify_embedded_method(body)
@@ -284,11 +299,14 @@ def admit_provider_call(agent, api_kwargs):
         agent._tp_context_output_parameter = "max_tokens" if "max_tokens" in api_kwargs else "max_completion_tokens"
     extra = api_kwargs.get("extra_body") or {}
     expected_provider = ({"only": ["openai"], "allow_fallbacks": False, "max_price": PRICE_CAPS[original["model"]]}
-        if original["model"] == "openai/gpt-6-luna" else {
+        if original["model"] in {"openai/gpt-6-luna", "openai/gpt-6.1-terra"} else {
             "order": ["deepinfra/fp8", "gmicloud/fp8"], "only": ["deepinfra/fp8", "gmicloud/fp8"],
             "allow_fallbacks": True, "max_price": PRICE_CAPS[original["model"]]})
+    expected_effort = "medium" if original["model"] == "openai/gpt-6.1-terra" else "high"
+    if original["model"] == "openai/gpt-6.1-terra":
+        expected_provider["require_parameters"] = True
     if (extra.get("provider") != expected_provider or extra.get("service_tier") != "default"
-            or extra.get("reasoning", {}).get("effort") != "high"
+            or extra.get("reasoning", {}).get("effort") != expected_effort
             # The native OpenRouter profile adds accounting metadata. It may
             # identify this exact isolated operation, never another session.
             or ("session_id" in extra and extra["session_id"] != getattr(agent, "session_id", None))

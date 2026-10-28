@@ -120,6 +120,45 @@ class DurableAccountingTests(unittest.TestCase):
         with self.assertRaises(durable.RequestConflictError):
             durable.begin_request("frozen-format", durable.request_payload_sha256(updated))
 
+    def test_canonical_hash_contract_is_stable_for_unicode_and_numbers(self):
+        payload = {"z": "ёлка", "a": [1.0, -0.0, 1e-7, {"é": "ok"}]}
+        self.assertEqual(
+            durable.canonical_request_payload(payload),
+            '{"a":[1,0,1e-7,{"é":"ok"}],"z":"ёлка"}',
+        )
+        self.assertEqual(
+            durable.request_payload_sha256(payload),
+            "abcea386650cd2d640c0f3da14be6ee91051d9998da6485cc7f2480bb7025d80",
+        )
+
+    def test_legacy_payload_is_checked_by_gateway_and_replays_exactly(self):
+        payload = {"model": "test/model", "messages": ["x"], "fraction": 1e-6}
+        legacy = durable.legacy_request_payload_sha256(payload)
+        current = durable.request_payload_sha256(payload)
+        self.assertNotEqual(legacy, current)
+        durable.begin_request("old-request", legacy)
+        self.assertFalse(durable.is_exact_completed_request("old-request", payload))
+        durable.complete_request("old-request", legacy, {"final_response": "saved"}, {"total_tokens": 1})
+        self.assertTrue(durable.is_exact_completed_request("old-request", payload))
+        self.assertFalse(durable.is_exact_completed_request("old-request", {**payload, "model": "different"}))
+        self.assertFalse(durable.is_exact_completed_request("missing", payload))
+        view = durable.seal_not_dispatched("old-request", current, legacy_payload_sha256=legacy)
+        self.assertEqual(view["state"], "completed")
+        replay = durable.begin_request("old-request", current, legacy_payload_sha256=legacy)
+        self.assertEqual(replay["result"]["final_response"], "saved")
+        changed = {**payload, "model": "different"}
+        with self.assertRaises(durable.RequestConflictError):
+            durable.seal_not_dispatched("old-request", durable.request_payload_sha256(changed),
+                legacy_payload_sha256=durable.legacy_request_payload_sha256(changed))
+        with self.assertRaises(durable.RequestConflictError):
+            durable.begin_request("old-request", durable.request_payload_sha256(changed),
+                legacy_payload_sha256=durable.legacy_request_payload_sha256(changed))
+
+    def test_ecmascript_unicode_and_number_vectors(self):
+        payload = {"\ue000": 1e-6, "😀": [1e-7, 1e20, 1e21, -0.0, 9007199254740993]}
+        self.assertEqual(durable.canonical_request_payload(payload),
+            '{"😀":[1e-7,100000000000000000000,1e+21,0,9007199254740992],"\ue000":0.000001}')
+
     def test_failed_execution_is_fail_closed_on_retry(self):
         digest = _payload("failure")
         durable.begin_request("cabinet-3", digest)
