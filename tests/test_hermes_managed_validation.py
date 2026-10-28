@@ -55,6 +55,23 @@ def reply(text="{{s2}}. Этот фактор помогает внимател�
 
 
 class ManagedTransitValidationTests(unittest.TestCase):
+    def test_feedback_uses_real_native_ref_and_valid_russian_skeleton(self):
+        context = prepare_managed_transit_context(body())
+        prompt = managed_transit_repair_prompt(["unmarked_native_precision"], context)
+        self.assertIn("без заголовка", prompt)
+        self.assertIn("без даты", prompt)
+        self.assertIn("«прохождение»", prompt)
+        self.assertNotIn('"refs": ["sN"]', prompt)
+        start = prompt.index('{"mode": "interpretation"')
+        skeleton, _ = json.JSONDecoder().raw_decode(prompt[start:])
+        self.assertEqual(managed_transit_issues(json.dumps(skeleton), context), [])
+
+    def test_conservative_heading_and_cross_sentence_repeat_triggers_are_diagnosable(self):
+        self.assertIn("unmarked_native_precision", managed_transit_issues(
+            reply("1 ноября: два практических вывода. {{s2}}"), body()))
+        self.assertIn("unprovided_repeat_pass", managed_transit_issues(
+            reply("Повторно проверьте документы. Это прохождение просит паузы. {{s2}}"), body()))
+
     def test_full_native_context_and_core_scope_are_not_confused_with_saved_ids(self):
         for packed in (False, True):
             original = body(packed)
