@@ -14,6 +14,13 @@ from copy import deepcopy
 from functools import lru_cache
 from pathlib import Path
 
+if __package__:
+    from .hermes_managed_validation import (ManagedValidationContextError,
+        prepare_managed_transit_context, managed_transit_issues, managed_transit_repair_prompt)
+else:
+    from hermes_managed_validation import (ManagedValidationContextError,
+        prepare_managed_transit_context, managed_transit_issues, managed_transit_repair_prompt)
+
 CONTRACT = "hermes-context-budget-v1"
 OUTPUT_TOKENS = 8192
 PRICE_CAPS = {
@@ -141,6 +148,10 @@ def prepare_admission(body, certificates=None, counter=count_messages):
     if expected_code is None or body.get("tp_dialogue_model") != expected_code:
         raise ContextBudgetError("hermes_context_dialogue_route_required")
     _verify_embedded_method(body)
+    try:
+        prepare_managed_transit_context(body)
+    except ManagedValidationContextError as error:
+        raise ContextBudgetError(str(error)) from None
     profiles = certificates if certificates is not None else _load_certificates()
     profile = profiles.get(model)
     if not profile:
@@ -182,6 +193,10 @@ def install_context_budget(agent, body):
     if body.get("tp_context_budget") is not None:
         agent._tp_context_budget_body = deepcopy(body)
         agent._tp_context_model_calls = 0
+        try:
+            agent._tp_managed_transit_context = prepare_managed_transit_context(body)
+        except ManagedValidationContextError as error:
+            raise ContextBudgetError(str(error)) from None
         # Full history/facts may be rejected, never automatically summarized.
         agent.compression_enabled = False
         overrides = deepcopy(getattr(agent, "request_overrides", {}) or {})
@@ -224,13 +239,45 @@ def readable_managed_part(content, managed_json):
         isinstance(p.get("refs"), list) and all(isinstance(ref, str) for ref in p["refs"]) for p in paragraphs)
 
 
+def managed_completion_action(agent, content):
+    """One outcome for both normal and length finish; never starts transport."""
+    context = getattr(agent, "_tp_managed_transit_context", None)
+    if context is None:
+        return "pass", ""
+    try:
+        issues = managed_transit_issues(content, context)
+    except Exception:
+        return "fail", "managed_transit_validation_unavailable"
+    if not issues:
+        return "pass", ""
+    if getattr(agent, "_tp_context_model_calls", 0) >= 3:
+        return "fail", "managed_transit_validation_exhausted"
+    feedback = managed_transit_repair_prompt(issues)
+    agent._tp_managed_repair_feedback = feedback
+    return "retry", feedback
+
+
 def admit_provider_call(agent, api_kwargs):
     original = getattr(agent, "_tp_context_budget_body", None)
     if original is None:
         return
-    if (api_kwargs.get("model") != original["model"] or api_kwargs.get("tools") or
+    calls = getattr(agent, "_tp_context_model_calls", 0)
+    if api_kwargs.get("model") != original["model"] or api_kwargs.get("tools"):
+        raise ContextBudgetError("hermes_context_provider_contract_changed")
+    if (calls and getattr(agent, "_tp_managed_transit_context", None) is not None
+            and getattr(agent, "_tp_managed_repair_feedback", None)):
+        # Length recovery may grow the upstream output limit. Every fresh
+        # managed repair uses the same admitted 8192-token output contract.
+        key = getattr(agent, "_tp_context_output_parameter", None)
+        if key not in {"max_tokens", "max_completion_tokens"}:
+            raise ContextBudgetError("hermes_context_provider_contract_changed")
+        api_kwargs.pop("max_completion_tokens" if key == "max_tokens" else "max_tokens", None)
+        api_kwargs[key] = OUTPUT_TOKENS
+    if (
             api_kwargs.get("max_tokens", api_kwargs.get("max_completion_tokens")) != OUTPUT_TOKENS):
         raise ContextBudgetError("hermes_context_provider_contract_changed")
+    if not calls:
+        agent._tp_context_output_parameter = "max_tokens" if "max_tokens" in api_kwargs else "max_completion_tokens"
     extra = api_kwargs.get("extra_body") or {}
     expected_provider = ({"only": ["openai"], "allow_fallbacks": False, "max_price": PRICE_CAPS[original["model"]]}
         if original["model"] == "openai/gpt-6-luna" else {
@@ -244,11 +291,21 @@ def admit_provider_call(agent, api_kwargs):
             or set(extra) - {"provider", "service_tier", "reasoning", "usage", "session_id"}
             or api_kwargs.get("response_format") != original.get("response_format")):
         raise ContextBudgetError("hermes_context_provider_route_changed")
-    calls = getattr(agent, "_tp_context_model_calls", 0)
     if calls >= 3:
         raise ContextBudgetError("hermes_context_automatic_attempt_limit")
     if calls == 0 and api_kwargs.get("messages") != original["messages"]:
         raise ContextBudgetError("hermes_context_provider_messages_changed")
+    if calls and getattr(agent, "_tp_managed_transit_context", None) is not None:
+        feedback = getattr(agent, "_tp_managed_repair_feedback", "")
+        expected = original["messages"] + [{"role": "user", "content": feedback}]
+        # The pinned loop merges consecutive user messages before this final
+        # boundary. Accept exactly that known transform, then restore the
+        # canonical split wire so the full original JSON remains one value.
+        merged = [original["messages"][0], {**original["messages"][1],
+            "content": original["messages"][1]["content"] + "\n\n" + feedback}]
+        if not feedback or api_kwargs.get("messages") not in (expected, merged):
+            raise ContextBudgetError("hermes_context_repair_messages_changed")
+        api_kwargs["messages"] = deepcopy(expected)
     actual = {**original, "messages": api_kwargs.get("messages"),
               "response_format": api_kwargs.get("response_format")}
     receipt = prepare_admission(actual)

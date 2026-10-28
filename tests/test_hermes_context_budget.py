@@ -18,6 +18,41 @@ def body(limit=128000):
 
 
 class ContextBudgetTests(unittest.TestCase):
+    def test_actual_repair_wire_is_counted_and_keeps_the_complete_native_json(self):
+        from test_hermes_managed_validation import body as transit_body, reply
+        original=transit_body(True)
+        original.update(model=MODEL,tp_dialogue_model='gpt_luna',response_format={'type':'json_object'},
+            tp_context_budget={'contract':budget.CONTRACT,'profile':'natal_transit','inputBudget':128000})
+        before=copy.deepcopy(original);agent=SimpleNamespace()
+        budget.install_context_budget(agent,original)
+        kwargs={'model':MODEL,'messages':original['messages'],'max_tokens':8192,
+            'response_format':original['response_format'],'extra_body':{
+            'provider':{'only':['openai'],'allow_fallbacks':False,'max_price':budget.PRICE_CAPS[MODEL]},
+            'service_tier':'default','reasoning':{'effort':'high'}}}
+        real_prepare=budget.prepare_admission;receipts=[];counted=[]
+        def prepare(actual):
+            def counter(model,messages,fmt):counted.append(copy.deepcopy(messages));return 500
+            receipt=real_prepare(actual,PROFILE,counter);receipts.append(receipt);return receipt
+        with patch.object(budget,'prepare_admission',side_effect=prepare):
+            budget.admit_provider_call(agent,kwargs)
+            action,feedback=budget.managed_completion_action(agent,reply('{{s2}} Повторное прохождение.'))
+            self.assertEqual(action,'retry')
+            kwargs['messages']=[original['messages'][0],{**original['messages'][1],
+                'content':original['messages'][1]['content']+'\n\n'+feedback}]
+            kwargs['max_tokens']=16384  # Pinned length recovery must not grow the contract.
+            budget.admit_provider_call(agent,kwargs)
+        self.assertEqual(kwargs['messages'],original['messages']+[{'role':'user','content':feedback}])
+        self.assertEqual(kwargs['messages'],counted[-1])
+        self.assertEqual(receipts[-1]['messagesSha256'],budget.digest(kwargs['messages']))
+        self.assertEqual(kwargs['max_tokens'],8192)
+        self.assertEqual(original,before)
+        for mutated in (kwargs['messages']+[{'role':'assistant','content':'hidden'}],
+                        [original['messages'][0],{'role':'user','content':original['messages'][1]['content']+'\n\n'+feedback+' hidden'}]):
+            kwargs['messages']=mutated
+            with self.assertRaisesRegex(budget.ContextBudgetError,'repair_messages_changed'):
+                budget.admit_provider_call(agent,kwargs)
+        self.assertEqual(agent._tp_context_model_calls,2)
+
     def test_full_128k_needs_window_142592(self):
         receipt = budget.prepare_admission(body(), PROFILE, lambda *args: 128000)
         self.assertTrue(receipt["admitted"])
