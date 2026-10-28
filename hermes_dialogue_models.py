@@ -15,7 +15,8 @@ PROFILES = {
         "providers": ["deepinfra/fp8", "gmicloud/fp8"],
         "max_price": {"prompt": 0.5, "completion": 1.5},
     },
-    "gpt_luna": {"model": "openai/gpt-6-luna", "provider": "openai"},
+    "gpt_luna": {"model": "openai/gpt-6-luna", "provider": "openai", "reasoning_effort": "high"},
+    "gpt_terra": {"model": "openai/gpt-6.1-terra", "provider": "openai", "reasoning_effort": "medium"},
 }
 
 
@@ -30,6 +31,12 @@ def choice_enabled(env=None):
             and env.get("HERMES_FIXED_MODEL_PROVIDER") == "openrouter")
 
 
+def terra_enabled(env=None):
+    env = os.environ if env is None else env
+    return (choice_enabled(env) and env.get("DEPLOYMENT_ENVIRONMENT") == "test"
+            and env.get("HERMES_TERRA_PERIODS_ENABLED") == "true")
+
+
 def validate_dialogue_model(body, idempotency_key, env=None):
     code = body.get("tp_dialogue_model")
     if code is None:
@@ -38,6 +45,10 @@ def validate_dialogue_model(body, idempotency_key, env=None):
         raise DialogueModelError("dialogue_model_invalid")
     if not choice_enabled(env):
         raise DialogueModelError("dialogue_model_choice_unavailable")
+    if code == "gpt_terra" and (not terra_enabled(env) or
+            (body.get("tp_context_budget") or {}).get("profile") != "natal_transit" or
+            not body.get("tp_managed_method_context")):
+        raise DialogueModelError("dialogue_model_terra_period_only")
     if body.get("stream") or not idempotency_key:
         raise DialogueModelError("dialogue_model_requires_durable_non_streaming")
     if body.get("model") != PROFILES[code]["model"]:
@@ -50,6 +61,8 @@ def dialogue_agent_settings(code, runtime_kwargs, model, reasoning_config, fallb
         return runtime_kwargs, model, reasoning_config, fallback_model
     if code not in PROFILES or not choice_enabled():
         raise DialogueModelError("dialogue_model_choice_unavailable")
+    if code == "gpt_terra" and not terra_enabled():
+        raise DialogueModelError("dialogue_model_terra_unavailable")
     if (runtime_kwargs.get("provider") != "openrouter" or
             runtime_kwargs.get("base_url", "").rstrip("/") != "https://openrouter.ai/api/v1"):
         raise DialogueModelError("dialogue_model_runtime_mismatch")
@@ -78,11 +91,15 @@ def dialogue_agent_settings(code, runtime_kwargs, model, reasoning_config, fallb
         # SDK from multiplying a provider failure inside each attempt.
     else:
         extra["provider"] = {"only": ["openai"], "allow_fallbacks": False}
+        if code == "gpt_terra":
+            extra["provider"].update(require_parameters=True,
+                                     max_price={"prompt": 2.5, "completion": 7.5})
     extra["service_tier"] = "default"
-    extra["reasoning"] = {"effort": "high"}
+    extra["reasoning"] = {"effort": profile.get("reasoning_effort", "high")}
     kwargs["max_tokens"] = 8192
-    return kwargs, profile["model"], {"effort": "high"}, None
+    return kwargs, profile["model"], {"effort": profile.get("reasoning_effort", "high")}, None
 
 
 def public_dialogue_models():
-    return {"version": 1, "codes": list(PROFILES)} if choice_enabled() else None
+    return {"version": 1, "codes": [code for code in PROFILES
+            if code != "gpt_terra" or terra_enabled()]} if choice_enabled() else None

@@ -40,6 +40,7 @@ COPY hermes_context_budget.py /opt/hermes/agent/context_budget.py
 COPY hermes_managed_validation.py /opt/hermes/agent/hermes_managed_validation.py
 COPY registry/context_budget_routes.json /opt/hermes/agent/context_budget_routes.json
 COPY registry/context_budget_calibration_20261027.json /opt/hermes/agent/context_budget_calibration_20261027.json
+COPY registry/context_budget_calibration_terra_20261028.json /opt/hermes/agent/context_budget_calibration_terra_20261028.json
 COPY scripts/install_context_tokenizers.py /opt/hermes-wrapper/install_context_tokenizers.py
 COPY patch_hermes_context_budget.py /opt/hermes-wrapper/patch_hermes_context_budget.py
 COPY patch_hermes_behavior_policy.py /opt/hermes-wrapper/patch_hermes_behavior_policy.py
