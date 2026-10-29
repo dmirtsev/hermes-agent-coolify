@@ -117,13 +117,15 @@ class DialogueModelsTests(unittest.TestCase):
             with self.assertRaises(models.DialogueModelError):
                 models.validate_dialogue_model({**body, **change}, "synthetic", TERRA_ENABLED)
 
-    def test_terra_accepts_existing_saved_transit_moment_wire_shape(self):
+    def test_terra_accepts_distinct_saved_natal_and_core_projection_result_ids(self):
         body = {"model": "openai/gpt-6.1-terra", "tp_dialogue_model": "gpt_terra",
                 "tp_context_budget": {"profile": "natal_transit"},
                 "tp_execution_mode": "interpretation_facts_v1", "tp_answer_format": "hermes_managed_v1",
                 "messages": [{"role": "system", "content": "managed"}, {"role": "user", "content": json.dumps({
                     "context": {"temporal": {"kind": "transit_moment", "source": {"natalResultId": "n"}}, "source": {"resultId": "n"}},
-                    "natalSource": {"resultId": "n"},
+                    # Real Core fact projections use local result_id="main";
+                    # the saved natal identity is separately carried by context.
+                    "natalSource": {"resultId": "main"},
                     "facts": {"layers": [{"chartType": "natal", "relationMethod": "base"}, {"chartType": "transit", "relationMethod": "transit"}],
                               "statements": {"format": "typed_rows_v1", "layouts": [["ref", "status", "text"]],
                                              "rows": [[0, "s1", "present", "Натал: Солнце в Овне"],
@@ -153,7 +155,10 @@ class DialogueModelsTests(unittest.TestCase):
             lambda p: p["facts"].update(statements=[]),
             lambda p: p["facts"]["statements"].update(count=3),
             lambda p: p["facts"]["statements"].update(rows=[[2, "s1"]], count=1),
-            lambda p: p["natalSource"].update(resultId="another-natal"),
+            lambda p: p["natalSource"].update(resultId=None),
+            lambda p: p["natalSource"].update(resultId=""),
+            lambda p: p["natalSource"].update(resultId=123),
+            lambda p: p["context"]["source"].update(resultId="another-natal"),
             lambda p: p["context"]["temporal"]["source"].update(natalResultId="another-natal"),
             lambda p: p["context"].update(source=None),
             lambda p: p["context"]["temporal"].pop("source"),
