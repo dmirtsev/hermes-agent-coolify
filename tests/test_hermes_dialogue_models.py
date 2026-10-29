@@ -31,7 +31,9 @@ class DialogueModelsTests(unittest.TestCase):
             (package / "__init__.py").write_text("")
             source = Path(__file__).resolve().parents[1]
             for original, target in [("hermes_dialogue_models.py", "dialogue_models.py"),
-                                     ("hermes_managed_validation.py", "hermes_managed_validation.py")]:
+                                     ("hermes_managed_validation.py", "hermes_managed_validation.py"),
+                                     ("hermes_context_rows.py", "hermes_context_rows.py"),
+                                     ("hermes_durable_accounting.py", "durable_accounting.py")]:
                 (package / target).write_bytes((source / original).read_bytes())
             process = subprocess.run([sys.executable, "-c",
                 "from agent.dialogue_models import validate_dialogue_model; assert validate_dialogue_model({}, None) is None"],
