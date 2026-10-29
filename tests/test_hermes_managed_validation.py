@@ -55,6 +55,31 @@ def reply(text="{{s2}}. Этот фактор помогает внимател�
 
 
 class ManagedTransitValidationTests(unittest.TestCase):
+    def test_synthesis_requested_by_system_survives_automatic_repair(self):
+        value = body(True)
+        value["messages"][0]["content"] += ' Use presentation="period_synthesis_v1" for period synthesis.'
+        context = prepare_managed_transit_context(value)
+        self.assertTrue(context.synthesis)
+        prompt = managed_transit_repair_prompt(["unmarked_native_precision"], context)
+        self.assertIn("presentation=period_synthesis_v1", prompt)
+        self.assertIn("Preserve the requested period synthesis and depth", prompt)
+        self.assertNotIn("Каждый абзац с расчётным основанием начинай", prompt)
+        skeleton = json.JSONDecoder().raw_decode(prompt[prompt.index('{"mode": "interpretation"'):])[0]
+        self.assertEqual(skeleton["presentation"], "period_synthesis_v1")
+        self.assertNotIn("{{", skeleton["paragraphs"][0]["text"])
+        self.assertEqual(managed_transit_issues(json.dumps(skeleton, ensure_ascii=False), context), [])
+        skeleton["paragraphs"][0]["text"] += " Возможный акцент 15.11.2026."
+        self.assertIn("unmarked_native_precision", managed_transit_issues(json.dumps(skeleton, ensure_ascii=False), context))
+
+    def test_user_text_cannot_enable_synthesis_repair(self):
+        value = body()
+        value["messages"][1]["content"] = value["messages"][1]["content"].replace("Complete original conversation", "period_synthesis_v1")
+        context = prepare_managed_transit_context(value)
+        self.assertFalse(context.synthesis)
+        prompt = managed_transit_repair_prompt(["unmarked_native_precision"], context)
+        self.assertIn("Каждый абзац с расчётным основанием начинай", prompt)
+        self.assertNotIn('"presentation": "period_synthesis_v1"', prompt)
+
     def test_feedback_uses_real_native_ref_and_valid_russian_skeleton(self):
         context = prepare_managed_transit_context(body())
         prompt = managed_transit_repair_prompt(["unmarked_native_precision"], context)
