@@ -62,12 +62,17 @@ def _verified_transit_moment(body):
         facts = payload.get("facts") or {}
         layers = facts.get("layers")
         statements = facts.get("statements")
-        if (not isinstance(source, dict) or not source.get("resultId") or
-                not isinstance(natal_source, dict) or not natal_source.get("resultId") or
-                source.get("resultId") != natal_source.get("resultId")):
+        # context.source identifies the saved natal result. natalSource comes
+        # from Core's fact projection and uses a separate local result ID
+        # (for example "main"). Cabinet binds that projection to the owned
+        # saved natal; comparing these different namespaces rejects real data.
+        if (not isinstance(source, dict) or
+                not isinstance(source.get("resultId"), str) or not source["resultId"].strip() or
+                not isinstance(natal_source, dict) or
+                not isinstance(natal_source.get("resultId"), str) or not natal_source["resultId"].strip()):
             return False
         if (not isinstance(temporal_source, dict) or
-                temporal_source.get("natalResultId") != natal_source.get("resultId")):
+                temporal_source.get("natalResultId") != source.get("resultId")):
             return False
         if not isinstance(layers, list) or not layers or not _rows(statements):
             return False
