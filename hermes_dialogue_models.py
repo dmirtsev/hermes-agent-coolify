@@ -7,7 +7,9 @@ process-global model is changed; every concurrent request creates its own agent.
 from __future__ import annotations
 
 import os
+import json
 from copy import deepcopy
+from hermes_managed_validation import _rows, ManagedValidationContextError
 
 PROFILES = {
     "deepseek_flash": {
@@ -37,6 +39,45 @@ def terra_enabled(env=None):
             and env.get("HERMES_TERRA_PERIODS_ENABLED") == "true")
 
 
+def _verified_transit_moment(body):
+    """Recognise the existing saved-composition moment wire shape.
+
+    Moment readings do not carry a versioned astrology-method envelope. They
+    are authorised by the packed temporal marker plus the saved natal and
+    transit layers in the same user message.
+    """
+    try:
+        message = body.get("messages", [])[1]
+        payload = json.loads(message["content"])
+        context = payload.get("context") or {}
+        temporal = context.get("temporal") or {}
+        if temporal.get("kind") != "transit_moment":
+            return False
+        source = context.get("source")
+        temporal_source = temporal.get("source")
+        natal_source = payload.get("natalSource")
+        facts = payload.get("facts") or {}
+        layers = facts.get("layers")
+        statements = facts.get("statements")
+        if (not isinstance(source, dict) or not source.get("resultId") or
+                not isinstance(natal_source, dict) or not natal_source.get("resultId") or
+                source.get("resultId") != natal_source.get("resultId")):
+            return False
+        if (not isinstance(temporal_source, dict) or
+                temporal_source.get("natalResultId") != natal_source.get("resultId")):
+            return False
+        if not isinstance(layers, list) or not layers or not _rows(statements):
+            return False
+        if any(not isinstance(layer, dict) for layer in layers):
+            return False
+        kinds = {layer.get("chartType") for layer in layers}
+        return kinds == {"natal", "transit"} and all(
+            layer.get("relationMethod") == "transit"
+            for layer in layers if layer.get("chartType") == "transit")
+    except (IndexError, KeyError, TypeError, AttributeError, ValueError, ManagedValidationContextError):
+        return False
+
+
 def validate_dialogue_model(body, idempotency_key, env=None):
     code = body.get("tp_dialogue_model")
     if code is None:
@@ -47,7 +88,11 @@ def validate_dialogue_model(body, idempotency_key, env=None):
         raise DialogueModelError("dialogue_model_choice_unavailable")
     if code == "gpt_terra" and (not terra_enabled(env) or
             (body.get("tp_context_budget") or {}).get("profile") != "natal_transit" or
-            not body.get("tp_managed_method_context")):
+            body.get("tp_dialogue_mode") == "free_dialogue" or
+            (not body.get("tp_managed_method_context") and
+             (body.get("tp_execution_mode") != "interpretation_facts_v1" or
+              body.get("tp_answer_format") != "hermes_managed_v1" or
+              not _verified_transit_moment(body)))):
         raise DialogueModelError("dialogue_model_terra_period_only")
     if body.get("stream") or not idempotency_key:
         raise DialogueModelError("dialogue_model_requires_durable_non_streaming")

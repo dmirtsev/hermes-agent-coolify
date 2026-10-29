@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import ast
+import json
 import os
 import threading
 import tempfile
 import unittest
 from pathlib import Path
+from copy import deepcopy
 from types import ModuleType, SimpleNamespace
 from typing import Any, Optional
 from unittest.mock import patch
@@ -97,6 +99,61 @@ class DialogueModelsTests(unittest.TestCase):
         for change in [{"tp_context_budget": {"profile": "natal"}}, {"tp_managed_method_context": None}]:
             with self.assertRaises(models.DialogueModelError):
                 models.validate_dialogue_model({**body, **change}, "synthetic", TERRA_ENABLED)
+
+    def test_terra_accepts_existing_saved_transit_moment_wire_shape(self):
+        body = {"model": "openai/gpt-6.1-terra", "tp_dialogue_model": "gpt_terra",
+                "tp_context_budget": {"profile": "natal_transit"},
+                "tp_execution_mode": "interpretation_facts_v1", "tp_answer_format": "hermes_managed_v1",
+                "messages": [{"role": "system", "content": "managed"}, {"role": "user", "content": json.dumps({
+                    "context": {"temporal": {"kind": "transit_moment", "source": {"natalResultId": "n"}}, "source": {"resultId": "n"}},
+                    "natalSource": {"resultId": "n"},
+                    "facts": {"layers": [{"chartType": "natal", "relationMethod": "base"}, {"chartType": "transit", "relationMethod": "transit"}],
+                              "statements": {"format": "typed_rows_v1", "layouts": [["ref", "status", "text"]],
+                                             "rows": [[0, "s1", "present", "Натал: Солнце в Овне"],
+                                                      [0, "s2", "present", "Транзит: Нептун — квадрат — натал: ASC"]],
+                                             "count": 2}},
+                })}]}
+        self.assertEqual(models.validate_dialogue_model(body, "synthetic", TERRA_ENABLED), "gpt_terra")
+        bad = dict(body)
+        bad["messages"] = list(body["messages"])
+        bad["messages"][1] = {"role": "user", "content": body["messages"][1]["content"].replace("transit_moment", "natal")}
+        with self.assertRaises(models.DialogueModelError):
+            models.validate_dialogue_model(bad, "synthetic", TERRA_ENABLED)
+        for key, value in [("natalSource", None), ("facts", {"layers": [{"chartType": "natal"}], "statements": [{"ref": "s1"}]}),
+                           ("tp_dialogue_mode", "free_dialogue")]:
+            invalid = dict(body)
+            if key == "tp_dialogue_mode": invalid[key] = value
+            else:
+                user = json.loads(invalid["messages"][1]["content"]); user[key] = value
+                invalid["messages"] = [invalid["messages"][0], {"role": "user", "content": json.dumps(user)}]
+            with self.assertRaises(models.DialogueModelError):
+                models.validate_dialogue_model(invalid, "synthetic", TERRA_ENABLED)
+
+        # The production builder packs facts. Exercise malformed packed rows,
+        # mismatched natal identity and a different forecasting method as well.
+        original = json.loads(body["messages"][1]["content"])
+        mutations = [
+            lambda p: p["facts"].update(statements=[]),
+            lambda p: p["facts"]["statements"].update(count=3),
+            lambda p: p["facts"]["statements"].update(rows=[[2, "s1"]], count=1),
+            lambda p: p["natalSource"].update(resultId="another-natal"),
+            lambda p: p["context"]["temporal"]["source"].update(natalResultId="another-natal"),
+            lambda p: p["context"].update(source=None),
+            lambda p: p["context"]["temporal"].pop("source"),
+            lambda p: p["facts"]["layers"].append({"chartType": "solar_return", "relationMethod": "solar_return"}),
+            lambda p: p["facts"]["layers"][1].update(relationMethod="progression"),
+        ]
+        for mutate in mutations:
+            payload = deepcopy(original)
+            mutate(payload)
+            invalid = {**body, "messages": [body["messages"][0], {"role": "user", "content": json.dumps(payload)}]}
+            with self.assertRaises(models.DialogueModelError):
+                models.validate_dialogue_model(invalid, "synthetic", TERRA_ENABLED)
+
+        for field, value in [("tp_execution_mode", "other"), ("tp_answer_format", "other"),
+                             ("tp_context_budget", {"profile": "natal"})]:
+            with self.assertRaises(models.DialogueModelError):
+                models.validate_dialogue_model({**body, field: value}, "synthetic", TERRA_ENABLED)
 
     def test_journal_replays_one_result_and_rejects_model_change_under_same_key(self):
         with tempfile.TemporaryDirectory() as folder, patch.dict(os.environ, {
