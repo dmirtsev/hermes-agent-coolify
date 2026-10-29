@@ -37,6 +37,7 @@ COPY hermes_sourced_text.py /opt/hermes/agent/sourced_text.py
 COPY hermes_dialogue_models.py /opt/hermes/agent/dialogue_models.py
 COPY hermes_behavior_policy.py /opt/hermes/agent/behavior_policy.py
 COPY hermes_context_budget.py /opt/hermes/agent/context_budget.py
+COPY hermes_context_rows.py /opt/hermes/agent/hermes_context_rows.py
 COPY hermes_managed_validation.py /opt/hermes/agent/hermes_managed_validation.py
 COPY registry/context_budget_routes.json /opt/hermes/agent/context_budget_routes.json
 COPY registry/context_budget_calibration_20261027.json /opt/hermes/agent/context_budget_calibration_20261027.json
