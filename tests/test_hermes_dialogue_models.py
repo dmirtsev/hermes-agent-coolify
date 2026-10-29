@@ -5,6 +5,8 @@ import json
 import os
 import threading
 import tempfile
+import subprocess
+import sys
 import unittest
 from pathlib import Path
 from copy import deepcopy
@@ -22,6 +24,21 @@ TERRA_ENABLED = {**ENABLED, "DEPLOYMENT_ENVIRONMENT": "test", "HERMES_TERRA_PERI
 
 
 class DialogueModelsTests(unittest.TestCase):
+    def test_imports_from_installed_package_layout_without_qa_path(self):
+        with tempfile.TemporaryDirectory() as directory:
+            package = Path(directory) / "agent"
+            package.mkdir()
+            (package / "__init__.py").write_text("")
+            source = Path(__file__).resolve().parents[1]
+            for original, target in [("hermes_dialogue_models.py", "dialogue_models.py"),
+                                     ("hermes_managed_validation.py", "hermes_managed_validation.py")]:
+                (package / target).write_bytes((source / original).read_bytes())
+            process = subprocess.run([sys.executable, "-c",
+                "from agent.dialogue_models import validate_dialogue_model; assert validate_dialogue_model({}, None) is None"],
+                cwd=directory, env={k: v for k, v in os.environ.items() if k != "PYTHONPATH"},
+                capture_output=True, text=True)
+            self.assertEqual(process.returncode, 0, process.stderr)
+
     def test_absent_choice_keeps_existing_behavior(self):
         self.assertIsNone(models.validate_dialogue_model({"model": "arbitrary-cosmetic-model"}, None, {}))
         kwargs = {"credential_pool": threading.Lock()}
