@@ -9,7 +9,10 @@ from __future__ import annotations
 import os
 import json
 from copy import deepcopy
-from hermes_managed_validation import _rows, ManagedValidationContextError
+if __package__:
+    from .hermes_managed_validation import _rows, ManagedValidationContextError
+else:
+    from hermes_managed_validation import _rows, ManagedValidationContextError
 
 PROFILES = {
     "deepseek_flash": {
