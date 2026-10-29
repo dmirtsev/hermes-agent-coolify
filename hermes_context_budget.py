@@ -17,9 +17,11 @@ from functools import lru_cache
 from pathlib import Path
 
 if __package__:
+    from .hermes_context_rows import ContextRowsError, unpack_context_rows
     from .hermes_managed_validation import (ManagedValidationContextError,
         prepare_managed_transit_context, managed_transit_issues, managed_transit_repair_prompt)
 else:
+    from hermes_context_rows import ContextRowsError, unpack_context_rows
     from hermes_managed_validation import (ManagedValidationContextError,
         prepare_managed_transit_context, managed_transit_issues, managed_transit_repair_prompt)
 
@@ -90,36 +92,52 @@ def count_messages(model, messages, response_format=None):
 
 
 def _unpack_rows(value):
-    if isinstance(value, list):
-        return value
-    if not isinstance(value, dict) or value.get("format") != "typed_rows_v1":
-        raise ContextBudgetError("hermes_context_rows_invalid")
-    layouts, rows = value.get("layouts"), value.get("rows")
-    if not isinstance(layouts, list) or not isinstance(rows, list) or value.get("count") != len(rows):
-        raise ContextBudgetError("hermes_context_rows_invalid")
-    result = []
-    for row in rows:
-        if not isinstance(row, list) or not row or type(row[0]) is not int or not 0 <= row[0] < len(layouts):
-            raise ContextBudgetError("hermes_context_rows_invalid")
-        columns = layouts[row[0]]
-        if (not isinstance(columns, list) or len(columns) != len(row) - 1 or
-                any(not isinstance(c, str) for c in columns) or len(columns) != len(set(columns))):
-            raise ContextBudgetError("hermes_context_rows_invalid")
-        result.append(dict(zip(columns, row[1:])))
-    return result
+    try:
+        return unpack_context_rows(value)
+    except ContextRowsError as error:
+        raise ContextBudgetError(str(error)) from None
 
 
 def _verify_embedded_method(body):
+    encoding = body.get("tp_context_encoding")
+    if encoding not in (None, "period_lossless_v2"):
+        raise ContextBudgetError("hermes_context_encoding_invalid")
     reading = body.get("tp_managed_method_context")
     if reading is None:
+        if encoding is not None:
+            raise ContextBudgetError("hermes_context_period_refs_invalid")
         return
     try:
         user = json.loads(body["messages"][1]["content"])
         expected = {key: reading[key] for key in ("profile", "selection", "resolution", "knowledge")}
         calculation = dict(user["context"]["transitPeriod"])
-        calculation["facts"] = _unpack_rows(calculation["facts"])
+        packed = calculation["facts"]
+        is_v2 = isinstance(packed, dict) and packed.get("format") == "period_facts_v2"
+        if is_v2 != (encoding == "period_lossless_v2"):
+            raise ContextBudgetError("hermes_context_encoding_invalid")
+        calculation["facts"] = _unpack_rows(packed)
         if user["context"]["method"] != expected or calculation != reading["calculation"]:
             raise ContextBudgetError("hermes_context_method_payload_mismatch")
+        if is_v2:
+            statements = _unpack_rows(user["facts"]["statements"])
+            expected_refs = calculation["factRefs"]
+            ids = [fact.get("fact_id", fact.get("id")) for fact in calculation["facts"]]
+            if (not expected_refs or ids != expected_refs
+                    or any(not isinstance(ref, str) or not ref for ref in ids)
+                    or len(set(ids)) != len(ids)):
+                raise ContextBudgetError("hermes_context_period_refs_invalid")
+            refs = [statement.get("ref") for statement in statements]
+            if (any(not isinstance(ref, str) or not re.fullmatch(r"s[1-9]\d*", ref) for ref in refs)
+                    or len(set(refs)) != len(refs)):
+                raise ContextBudgetError("hermes_context_period_refs_invalid")
+            period_statements = [statement for statement in statements
+                                 if statement.get("fromLayerId") == "transit_period"
+                                 and statement.get("aspectScope") == "between_layers"]
+            if ([statement.get("sourceRef") for statement in period_statements] != expected_refs
+                    or any(statement.get("status") != "present" or not statement.get("toLayerId")
+                           or "text" in statement or "phrase" in statement for statement in period_statements)
+                    or any("sourceRef" in statement for statement in statements if statement not in period_statements)):
+                raise ContextBudgetError("hermes_context_period_refs_invalid")
         history = _unpack_rows(user["history"])
         cursor = 0
         for item in reading["memory_context"]["items"]:
@@ -128,7 +146,7 @@ def _verify_embedded_method(body):
             if cursor == len(history):
                 raise ContextBudgetError("hermes_context_method_history_mismatch")
             cursor += 1
-    except (ValueError, TypeError, KeyError, IndexError) as error:
+    except (ValueError, TypeError, KeyError, IndexError, AttributeError) as error:
         if isinstance(error, ContextBudgetError):
             raise
         raise ContextBudgetError("hermes_context_method_payload_invalid") from error

@@ -1,4 +1,5 @@
 import copy
+import json
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -17,7 +18,162 @@ def body(limit=128000):
         "messages": [{"role": "system", "content": "Полная инструкция"}, {"role": "user", "content": "Полная история и все интервалы"}]}
 
 
+def pack_rows(rows, v2=False):
+    layouts, packed = [], []
+    for row in rows:
+        columns = sorted(row)
+        if columns not in layouts:
+            layouts.append(columns)
+        packed.append([layouts.index(columns)] + [row[key] for key in columns])
+    result = {"format": "typed_rows_v1", "layouts": layouts, "rows": packed,
+              "count": len(rows), "sourceSha256": budget.digest(rows)}
+    if v2:
+        result.update(format="period_facts_v2", encoding="period_lossless_v2", aliases=[[] for _ in layouts])
+    return result
+
+
+def v2_body(count=3):
+    from test_hermes_managed_validation import body as transit_body
+    value = transit_body()
+    user = json.loads(value["messages"][1]["content"])
+    calc = value["tp_managed_method_context"]["calculation"]
+    native = []
+    for index in range(count):
+        row = copy.deepcopy(calc["facts"][index % 3])
+        row["fact_id"] = "canonical-interval-" + str(index)
+        del row["id"]
+        row["opaque"] = {"extra": [None, True, False, 0, "", 0.40000123456789]}
+        row["band"] = {"exact_times": copy.deepcopy(row["time_window"]["exact_times"])}
+        native.append(row)
+    calc["facts"], calc["factRefs"] = native, [row["fact_id"] for row in native]
+    user["context"]["transitPeriod"] = copy.deepcopy(calc)
+    user["context"]["transitPeriod"]["facts"] = pack_rows(native, True)
+    statements = [user["facts"]["statements"][0]]
+    # Many natal rows deliberately shift the global period namespace.
+    statements += [{"ref": "s"+str(i+2), "text": "Full natal statement "+str(i),
+                    "status": "present", "layerId": "base_natal"} for i in range(40)]
+    for index, row in enumerate(native):
+        statements.append({"ref": "s"+str(index+42), "status": "present", "title": "Транзитный интервал",
+                           "aspectScope": "between_layers", "fromLayerId": "transit_period",
+                           "toLayerId": "base_natal", "reviewPriority": "required", "sourceRef": row["fact_id"]})
+    user["facts"]["statements"] = pack_rows(statements)
+    history = [{"role": "assistant" if i % 2 else "user", "content": str(i)+": "+"Полная история без сокращений. "*64} for i in range(24)]
+    user["history"] = pack_rows(history)
+    value["tp_managed_method_context"]["memory_context"]["items"] = copy.deepcopy(history)
+    value["tp_context_encoding"] = "period_lossless_v2"
+    value.update(model=MODEL, tp_dialogue_model="gpt_luna",
+        tp_context_budget={"contract": budget.CONTRACT, "profile": "natal_transit", "inputBudget": 128000})
+    value["messages"][1]["content"] = json.dumps(user, ensure_ascii=False)
+    return value
+
+
+def mutate_user(value, mutate):
+    user = json.loads(value["messages"][1]["content"])
+    mutate(user)
+    value["messages"][1]["content"] = json.dumps(user, ensure_ascii=False)
+    return value
+
+
 class ContextBudgetTests(unittest.TestCase):
+    def test_period_facts_v2_is_lossless_and_version_checked(self):
+        packed = {"format": "period_facts_v2", "encoding": "period_lossless_v2",
+                  "layouts": [["id", "exact_times"]],
+                  "rows": [[0, "i1", ["2027-01-01T00:00:00Z"]]], "count": 1, "aliases": [[]],
+                  "sourceSha256": budget.digest([{"id": "i1", "exact_times": ["2027-01-01T00:00:00Z"]}])}
+        self.assertEqual(budget._unpack_rows(packed),
+                         [{"id": "i1", "exact_times": ["2027-01-01T00:00:00Z"]}])
+        with self.assertRaisesRegex(budget.ContextBudgetError, "hermes_context_rows_invalid"):
+            budget._unpack_rows({**packed, "encoding": "period_lossless_v1"})
+
+    def test_v2_all_470_intervals_natal_and_24_messages_reach_counter_unchanged(self):
+        value = v2_body(470)
+        before = copy.deepcopy(value)
+        counted = []
+        receipt = budget.prepare_admission(value, PROFILE, lambda model, messages, fmt: counted.append(copy.deepcopy(messages)) or 128000)
+        self.assertTrue(receipt["admitted"])
+        self.assertEqual(value, before)
+        self.assertEqual(counted, [value["messages"]])
+        user = json.loads(counted[0][1]["content"])
+        rows = budget._unpack_rows(user["facts"]["statements"])
+        self.assertEqual(len(rows), 511)
+        self.assertEqual(rows[41]["ref"], "s42")
+        self.assertEqual(rows[41]["sourceRef"], "canonical-interval-0")
+        self.assertTrue(all(row["reviewPriority"] == "required" for row in rows[41:]))
+        self.assertEqual(len(budget._unpack_rows(user["history"])), 24)
+        context = budget.prepare_managed_transit_context(value)
+        self.assertEqual(len(context.intervals), 470)
+        self.assertEqual(len(context.base_refs), 41)
+
+    def test_v2_nested_alias_restores_original_types_precision_and_opaque_fields(self):
+        value = v2_body()
+        user = json.loads(value["messages"][1]["content"])
+        packed = user["context"]["transitPeriod"]["facts"]
+        band_column = packed["layouts"][0].index("band") + 1
+        for row in packed["rows"]:
+            del row[band_column]["exact_times"]
+        packed["aliases"] = [[[["band", "exact_times"], ["time_window", "exact_times"]]]]
+        original = value["tp_managed_method_context"]["calculation"]["facts"]
+        before = copy.deepcopy(packed)
+        self.assertEqual(budget._unpack_rows(packed), original)
+        self.assertEqual(packed, before)
+        value["messages"][1]["content"] = json.dumps(user, ensure_ascii=False)
+        self.assertTrue(budget.prepare_admission(value, PROFILE, lambda *args: 500)["admitted"])
+        for alias in ([[["band", "exact_times"], ["absent"]]],
+                      [[["time_window", "exact_times"], ["band", "exact_times"]]],
+                      [[["band", "exact_times"], ["band", "exact_times"]]]):
+            broken = copy.deepcopy(packed)
+            broken["aliases"] = [alias]
+            with self.assertRaises(budget.ContextBudgetError):
+                budget._unpack_rows(broken)
+
+    def test_v2_rejects_missing_duplicate_shifted_natal_or_tampered_refs_before_counting(self):
+        def change_statements(user, change):
+            rows = budget._unpack_rows(user["facts"]["statements"])
+            change(rows)
+            user["facts"]["statements"] = pack_rows(rows)
+        mutations = [
+            lambda rows: rows.pop(),
+            lambda rows: rows.append(copy.deepcopy(rows[-1])),
+            lambda rows: rows[41].update(sourceRef="canonical-interval-1"),
+            lambda rows: rows[0].update(sourceRef="canonical-interval-0"),
+            lambda rows: rows[41].update(ref="s1"),
+            lambda rows: rows[41].pop("sourceRef"),
+            lambda rows: rows[41].pop("fromLayerId"),
+            lambda rows: rows[41].update(text="duplicated native prose"),
+        ]
+        for change in mutations:
+            with self.subTest(change=change):
+                value = mutate_user(v2_body(), lambda user: change_statements(user, change))
+                with self.assertRaises(budget.ContextBudgetError):
+                    budget.prepare_admission(value, PROFILE, lambda *args: self.fail("must reject before counter"))
+
+    def test_v2_detects_native_digest_tamper_missing_rows_and_encoding_mismatch(self):
+        value = v2_body()
+        mutations = [
+            lambda user: user["context"]["transitPeriod"]["facts"].update(sourceSha256="0"*64),
+            lambda user: user["context"]["transitPeriod"]["facts"]["rows"].pop(),
+            lambda user: user["context"]["transitPeriod"]["facts"].update(encoding="unknown"),
+            lambda user: user["context"]["transitPeriod"]["facts"].pop("sourceSha256"),
+        ]
+        for mutation in mutations:
+            with self.assertRaises(budget.ContextBudgetError):
+                budget.prepare_admission(mutate_user(copy.deepcopy(value), mutation), PROFILE, lambda *args: 500)
+        value.pop("tp_context_encoding")
+        with self.assertRaises(budget.ContextBudgetError):
+            budget.prepare_admission(value, PROFILE, lambda *args: 500)
+
+    def test_v2_missing_history_is_rejected_and_overflow_never_changes_the_wire(self):
+        value = v2_body(470)
+        before = copy.deepcopy(value)
+        receipt = budget.prepare_admission(value, PROFILE, lambda *args: 128001)
+        self.assertEqual(receipt["reason"], "hermes_context_input_overflow")
+        self.assertEqual(value, before)
+        def truncate(user):
+            history = budget._unpack_rows(user["history"])
+            user["history"] = pack_rows(history[:-1])
+        with self.assertRaisesRegex(budget.ContextBudgetError, "history_mismatch"):
+            budget.prepare_admission(mutate_user(value, truncate), PROFILE, lambda *args: 500)
+
     def test_actual_repair_wire_is_counted_and_keeps_the_complete_native_json(self):
         from test_hermes_managed_validation import body as transit_body, reply
         original=transit_body(True)

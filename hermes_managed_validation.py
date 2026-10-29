@@ -10,6 +10,11 @@ import json
 import re
 from dataclasses import dataclass
 
+if __package__:
+    from .hermes_context_rows import ContextRowsError, unpack_context_rows
+else:
+    from hermes_context_rows import ContextRowsError, unpack_context_rows
+
 VALIDATION_VERSION = "hermes-managed-transit-v1"
 
 
@@ -23,26 +28,14 @@ class ManagedTransitContext:
     base_refs: frozenset[str]
     # ref -> (native participant/aspect identity, supplied exact UTC instants)
     intervals: dict[str, tuple[tuple[str, str, str], frozenset[str]]]
+    synthesis: bool = False
 
 
 def _rows(value):
-    if isinstance(value, list) and all(isinstance(row, dict) for row in value):
-        return value
-    if not isinstance(value, dict) or value.get("format") != "typed_rows_v1":
-        raise ManagedValidationContextError("managed_transit_rows_invalid")
-    layouts, rows = value.get("layouts"), value.get("rows")
-    if not isinstance(layouts, list) or not isinstance(rows, list) or value.get("count") != len(rows):
-        raise ManagedValidationContextError("managed_transit_rows_invalid")
-    result = []
-    for row in rows:
-        if not isinstance(row, list) or not row or type(row[0]) is not int or not 0 <= row[0] < len(layouts):
-            raise ManagedValidationContextError("managed_transit_rows_invalid")
-        layout = layouts[row[0]]
-        if (not isinstance(layout, list) or not all(isinstance(k, str) for k in layout)
-                or len(set(layout)) != len(layout) or len(row) != len(layout) + 1):
-            raise ManagedValidationContextError("managed_transit_rows_invalid")
-        result.append(dict(zip(layout, row[1:])))
-    return result
+    try:
+        return unpack_context_rows(value)
+    except ContextRowsError as error:
+        raise ManagedValidationContextError(str(error)) from None
 
 
 def prepare_managed_transit_context(body):
@@ -70,7 +63,7 @@ def prepare_managed_transit_context(body):
         period = user["context"]["transitPeriod"]
         native = _rows(calculation["facts"])
         if (native != _rows(period["facts"]) or not native
-                or calculation["factRefs"] != [f["id"] for f in native]
+                or calculation["factRefs"] != [f.get("fact_id", f.get("id")) for f in native]
                 or any(facts["source"][key] != calculation[key] or period[key] != calculation[key]
                        for key in ("calculationId", "resultId"))):
             raise ManagedValidationContextError("managed_transit_native_context_mismatch")
@@ -90,6 +83,8 @@ def prepare_managed_transit_context(body):
             raise ManagedValidationContextError("managed_transit_reference_context_mismatch")
         intervals = {}
         for statement, band in zip(transit, native):
+            if body.get("tp_context_encoding") == "period_lossless_v2" and statement.get("sourceRef") != band.get("fact_id", band.get("id")):
+                raise ManagedValidationContextError("managed_transit_reference_context_mismatch")
             group = (band["transit_planet"]["code"], band["natal_point"]["code"], band["aspect"]["code"])
             if not all(isinstance(code, str) and code for code in group):
                 raise ManagedValidationContextError("managed_transit_native_identity_invalid")
@@ -98,7 +93,8 @@ def prepare_managed_transit_context(body):
             if not all(isinstance(instant, str) and instant for instant in instants):
                 raise ManagedValidationContextError("managed_transit_native_times_invalid")
             intervals[statement["ref"]] = (group, instants)
-        return ManagedTransitContext(frozenset(refs), base_refs, intervals)
+        synthesis = isinstance(messages[0].get("content"), str) and "period_synthesis_v1" in messages[0]["content"]
+        return ManagedTransitContext(frozenset(refs), base_refs, intervals, synthesis)
     except ManagedValidationContextError:
         raise
     except (KeyError, TypeError, ValueError, AttributeError, IndexError):
@@ -190,6 +186,31 @@ def managed_transit_issues(content, body_or_context):
 
 def managed_transit_repair_prompt(issues, context=None):
     codes = ", ".join(sorted(set(issues)))
+    if context is not None and context.synthesis:
+        refs = sorted(context.intervals, key=lambda value: int(value[1:]))[:1]
+        if context.base_refs:
+            refs = [min(context.base_refs, key=lambda value: int(value[1:]))] + refs
+        skeleton = {"mode": "interpretation", "presentation": "period_synthesis_v1", "paragraphs": [
+            {"text": "Общая тема связывает внешние задачи с привычными способами принимать решения. "
+                     "Сверяйте важные договорённости и оставляйте запас на уточнения.", "refs": refs}]}
+        return (
+            "[System repair " + VALIDATION_VERSION + ": The previous draft was not published. "
+            "Validation issues: " + codes + ". Return one fresh complete JSON object for the SAME "
+            "original question, full supplied native facts and full published conversation. "
+            "Preserve the requested period synthesis and depth; do not turn it into a sequence of "
+            "mini references for individual transits. Keep mode=interpretation and "
+            "presentation=period_synthesis_v1. Main text explains qualitative meaning, interactions, "
+            "contradictions and development of relevant themes against the natal basis. Each paragraph "
+            "uses only its relevant existing current refs; Cabinet supplies their exact native facts "
+            "in the calculation basis. Do not add a marker at the beginning of every paragraph. "
+            "Do not write dates, times, orb values, concrete aspect names, placements or directions "
+            "in free prose. Do not invent morning, midday, evening or halves of a day. Do not invent "
+            "events, merge intervals across gaps or treat repeated passes as independent evidence. "
+            "Do not shorten the requested analysis to a summary or copy the rejected draft. "
+            "Пиши связный подробный разбор по-русски, от общей картины к существенным темам "
+            "и применению; не создавай технический список и заголовок расчётной основы. "
+            "Пример только формата: " + json.dumps(skeleton, ensure_ascii=False) + ". JSON only.]"
+        )
     example = ""
     if context is not None and context.intervals:
         ref = min(context.intervals, key=lambda value: int(value[1:]))
