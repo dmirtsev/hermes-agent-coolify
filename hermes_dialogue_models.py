@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import os
 import json
+import hashlib
+from pathlib import Path
 from copy import deepcopy
 if __package__:
     from .hermes_managed_validation import _rows, ManagedValidationContextError
@@ -19,6 +21,13 @@ PROFILES = {
         "model": "deepseek/deepseek-v4-flash",
         "providers": ["deepinfra/fp8", "gmicloud/fp8"],
         "max_price": {"prompt": 0.5, "completion": 1.5},
+    },
+    # Test-only candidate.  Admission remains closed until a signed route
+    # certificate and calibration evidence are committed.
+    "deepseek_flash_plus": {
+        "model": "deepseek/deepseek-v4.1-flash",
+        "providers": ["deepinfra/fp8"],
+        "max_price": {"prompt": 0.2, "completion": 0.6},
     },
     "gpt_luna": {"model": "openai/gpt-6-luna", "provider": "openai", "reasoning_effort": "high"},
     "gpt_terra": {"model": "openai/gpt-6.1-terra", "provider": "openai", "reasoning_effort": "medium"},
@@ -40,6 +49,40 @@ def terra_enabled(env=None):
     env = os.environ if env is None else env
     return (choice_enabled(env) and env.get("DEPLOYMENT_ENVIRONMENT") == "test"
             and env.get("HERMES_TERRA_PERIODS_ENABLED") == "true")
+
+
+def deepseek_flash_plus_enabled(env=None):
+    env = os.environ if env is None else env
+    raw_cap = env.get("HERMES_DEEPSEEK_FLASH_PLUS_MAX_CHARGE_KOPECKS")
+    return (choice_enabled(env) and env.get("DEPLOYMENT_ENVIRONMENT") == "test"
+            and env.get("HERMES_DEEPSEEK_FLASH_PLUS_ENABLED") == "true"
+            and env.get("HERMES_DEEPSEEK_FLASH_PLUS_BACKEND_CAPABILITY") == "true"
+            and isinstance(raw_cap, str) and raw_cap.isdigit() and int(raw_cap) > 0
+            and bool(env.get("HERMES_DEEPSEEK_FLASH_PLUS_PRICE_POLICY_VERSION", "").strip()))
+
+
+def deepseek_flash_plus_certified():
+    root = Path(__file__).parent
+    route = root / "context_budget_routes.json"
+    evidence = root / "context_budget_calibration_v41_20261030.json"
+    if not route.exists():
+        route = root / "registry" / route.name
+        evidence = root / "registry" / evidence.name
+    try:
+        data = json.loads(route.read_text())["deepseek/deepseek-v4.1-flash"]
+        evidence_data = json.loads(evidence.read_text())
+        digest = hashlib.sha256(evidence.read_bytes()).hexdigest()
+        return (data.get("accuracy") == "calibrated" and
+                data.get("evidenceSha256") == digest and
+                data.get("contextWindow", 0) >= 142592 and
+                len(evidence_data.get("cases", [])) >= 7 and
+                all(isinstance(case.get("messagesSha256"), str) and
+                    len(case["messagesSha256"]) == 64 and
+                    isinstance(case.get("generationId"), str) and
+                    isinstance(case.get("providerInputTokens"), int)
+                    for case in evidence_data["cases"]))
+    except (OSError, KeyError, TypeError, ValueError):
+        return False
 
 
 def _verified_transit_moment(body):
@@ -94,6 +137,19 @@ def validate_dialogue_model(body, idempotency_key, env=None):
         raise DialogueModelError("dialogue_model_invalid")
     if not choice_enabled(env):
         raise DialogueModelError("dialogue_model_choice_unavailable")
+    if code == "deepseek_flash_plus" and (not deepseek_flash_plus_enabled(env)
+                                          or not deepseek_flash_plus_certified()):
+        raise DialogueModelError("dialogue_model_deepseek_flash_plus_unavailable")
+    if code == "deepseek_flash_plus" and not isinstance(body.get("tp_context_budget"), dict):
+        raise DialogueModelError("dialogue_model_deepseek_flash_plus_budget_required")
+    if code == "deepseek_flash_plus" and (
+            (body.get("tp_context_budget") or {}).get("profile") != "natal_transit" or
+            body.get("tp_dialogue_mode") == "free_dialogue" or
+            (not body.get("tp_managed_method_context") and
+             (body.get("tp_execution_mode") != "interpretation_facts_v1" or
+              body.get("tp_answer_format") != "hermes_managed_v1" or
+              not _verified_transit_moment(body)))):
+        raise DialogueModelError("dialogue_model_deepseek_flash_plus_transit_only")
     if code == "gpt_terra" and (not terra_enabled(env) or
             (body.get("tp_context_budget") or {}).get("profile") != "natal_transit" or
             body.get("tp_dialogue_mode") == "free_dialogue" or
@@ -116,6 +172,9 @@ def dialogue_agent_settings(code, runtime_kwargs, model, reasoning_config, fallb
         raise DialogueModelError("dialogue_model_choice_unavailable")
     if code == "gpt_terra" and not terra_enabled():
         raise DialogueModelError("dialogue_model_terra_unavailable")
+    if code == "deepseek_flash_plus" and (not deepseek_flash_plus_enabled()
+                                          or not deepseek_flash_plus_certified()):
+        raise DialogueModelError("dialogue_model_deepseek_flash_plus_unavailable")
     if (runtime_kwargs.get("provider") != "openrouter" or
             runtime_kwargs.get("base_url", "").rstrip("/") != "https://openrouter.ai/api/v1"):
         raise DialogueModelError("dialogue_model_runtime_mismatch")
@@ -131,13 +190,13 @@ def dialogue_agent_settings(code, runtime_kwargs, model, reasoning_config, fallb
     extra = overrides.setdefault("extra_body", {})
     for key in ("models", "route", "reasoning"):
         extra.pop(key, None)
-    if code == "deepseek_flash":
+    if code in {"deepseek_flash", "deepseek_flash_plus"}:
         # OpenRouter may fail over only between the two approved endpoints for
         # this exact model; no other model or provider is admissible.
         extra["provider"] = {
             "order": list(profile["providers"]),
             "only": list(profile["providers"]),
-            "allow_fallbacks": True,
+            "allow_fallbacks": code == "deepseek_flash",
             "max_price": dict(profile["max_price"]),
         }
         # The outer conversation loop owns retries for this route.  Keep the
@@ -147,6 +206,8 @@ def dialogue_agent_settings(code, runtime_kwargs, model, reasoning_config, fallb
         if code == "gpt_terra":
             extra["provider"].update(require_parameters=True,
                                      max_price={"prompt": 2.5, "completion": 7.5})
+    if code == "deepseek_flash_plus":
+        extra["provider"]["require_parameters"] = True
     extra["service_tier"] = "default"
     extra["reasoning"] = {"effort": profile.get("reasoning_effort", "high")}
     kwargs["max_tokens"] = 8192
@@ -155,4 +216,7 @@ def dialogue_agent_settings(code, runtime_kwargs, model, reasoning_config, fallb
 
 def public_dialogue_models():
     return {"version": 1, "codes": [code for code in PROFILES
-            if code != "gpt_terra" or terra_enabled()]} if choice_enabled() else None
+            if (code != "gpt_terra" or terra_enabled())
+            and (code != "deepseek_flash_plus" or
+                 (deepseek_flash_plus_enabled() and deepseek_flash_plus_certified()))
+            ]} if choice_enabled() else None

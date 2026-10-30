@@ -51,6 +51,10 @@ class DialogueModelsTests(unittest.TestCase):
     def test_validate_choice_before_dispatch(self):
         for code, profile in models.PROFILES.items():
             body = {"model": profile["model"], "tp_dialogue_model": code}
+            if code == "deepseek_flash_plus":
+                # Candidate route is intentionally fail-closed until its
+                # certificate exists; it is tested by dedicated guards below.
+                continue
             if code == "gpt_terra":
                 body.update(tp_context_budget={"profile": "natal_transit"}, tp_managed_method_context={"synthetic": True})
             self.assertEqual(models.validate_dialogue_model(body, "stable-request", TERRA_ENABLED), code)
@@ -238,6 +242,65 @@ class PatchedConstructorTests(unittest.TestCase):
             self.assertIsNone(agent.session_db)
             self.assertTrue(agent.skip_context_files)
             self.assertTrue(agent.skip_memory)
+
+
+class DeepSeekFlashPlusGuardTests(unittest.TestCase):
+    def test_feature_flag_is_test_only_and_not_public(self):
+        env = {**ENABLED, "DEPLOYMENT_ENVIRONMENT": "test",
+               "HERMES_DEEPSEEK_FLASH_PLUS_ENABLED": "true",
+               "HERMES_DEEPSEEK_FLASH_PLUS_BACKEND_CAPABILITY": "true",
+               "HERMES_DEEPSEEK_FLASH_PLUS_MAX_CHARGE_KOPECKS": "5000",
+               "HERMES_DEEPSEEK_FLASH_PLUS_PRICE_POLICY_VERSION": "policy-v1"}
+        self.assertTrue(models.deepseek_flash_plus_enabled(env))
+        with patch.dict(os.environ, env, clear=True):
+            self.assertIn("deepseek_flash_plus", models.public_dialogue_models()["codes"])
+
+    def test_feature_flag_is_disabled_outside_test(self):
+        env = {**ENABLED, "DEPLOYMENT_ENVIRONMENT": "production",
+               "HERMES_DEEPSEEK_FLASH_PLUS_ENABLED": "true"}
+        self.assertFalse(models.deepseek_flash_plus_enabled(env))
+
+    def test_plus_requires_budget_even_when_certified(self):
+        env = {**ENABLED, "DEPLOYMENT_ENVIRONMENT": "test",
+               "HERMES_DEEPSEEK_FLASH_PLUS_ENABLED": "true",
+               "HERMES_DEEPSEEK_FLASH_PLUS_BACKEND_CAPABILITY": "true",
+               "HERMES_DEEPSEEK_FLASH_PLUS_MAX_CHARGE_KOPECKS": "5000",
+               "HERMES_DEEPSEEK_FLASH_PLUS_PRICE_POLICY_VERSION": "policy-v1"}
+        body = {"model": "deepseek/deepseek-v4.1-flash",
+                "tp_dialogue_model": "deepseek_flash_plus",
+                "messages": [{"role": "user", "content": "x"}]}
+        with self.assertRaisesRegex(models.DialogueModelError, "budget_required"):
+            models.validate_dialogue_model(body, "operation", env)
+
+    def test_plus_rejects_natal_and_free_routes(self):
+        env = {**ENABLED, "DEPLOYMENT_ENVIRONMENT": "test",
+               "HERMES_DEEPSEEK_FLASH_PLUS_ENABLED": "true",
+               "HERMES_DEEPSEEK_FLASH_PLUS_BACKEND_CAPABILITY": "true",
+               "HERMES_DEEPSEEK_FLASH_PLUS_MAX_CHARGE_KOPECKS": "5000",
+               "HERMES_DEEPSEEK_FLASH_PLUS_PRICE_POLICY_VERSION": "policy-v1"}
+        body = {"model": "deepseek/deepseek-v4.1-flash",
+                "tp_dialogue_model": "deepseek_flash_plus",
+                "tp_context_budget": {"profile": "natal"},
+                "tp_dialogue_mode": "free_dialogue"}
+        with self.assertRaisesRegex(models.DialogueModelError, "transit_only"):
+            models.validate_dialogue_model(body, "operation", env)
+
+    def test_certified_plus_pins_provider_without_fallback(self):
+        env = {**ENABLED, "DEPLOYMENT_ENVIRONMENT": "test",
+               "HERMES_DEEPSEEK_FLASH_PLUS_ENABLED": "true",
+               "HERMES_DEEPSEEK_FLASH_PLUS_BACKEND_CAPABILITY": "true",
+               "HERMES_DEEPSEEK_FLASH_PLUS_MAX_CHARGE_KOPECKS": "5000",
+               "HERMES_DEEPSEEK_FLASH_PLUS_PRICE_POLICY_VERSION": "policy-v1"}
+        with patch.dict(os.environ, env, clear=True):
+            settings = models.dialogue_agent_settings(
+                    "deepseek_flash_plus",
+                    {"provider": "openrouter",
+                     "base_url": "https://openrouter.ai/api/v1"},
+                    "deepseek/deepseek-v4.1-flash", {}, None)
+            self.assertEqual(settings[0]["request_overrides"]["extra_body"]["provider"], {
+                "order": ["deepinfra/fp8"], "only": ["deepinfra/fp8"],
+                "allow_fallbacks": False, "max_price": {"prompt": 0.2, "completion": 0.6},
+                "require_parameters": True})
 
 
 if __name__ == "__main__":

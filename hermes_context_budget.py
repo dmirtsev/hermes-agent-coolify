@@ -32,6 +32,7 @@ PRICE_CAPS = {
     "deepseek/deepseek-v4-flash": {"prompt": 0.1, "completion": 0.5},
     # Ceiling in USD/M tokens, kept separate from the provider's live tariff.
     "openai/gpt-6.1-terra": {"prompt": 2.5, "completion": 7.5},
+    "deepseek/deepseek-v4.1-flash": {"prompt": 0.2, "completion": 0.6},
 }
 ASSETS = Path(os.environ.get("HERMES_TOKENIZER_ASSETS", "/opt/hermes/tokenizers"))
 CERTIFICATES = Path(__file__).with_name("context_budget_routes.json")
@@ -61,6 +62,15 @@ def _deepseek_encoder():
     return Tokenizer.from_file(str(ASSETS / "deepseek-tokenizer.json")), module
 
 
+@lru_cache(maxsize=1)
+def _deepseek_v41_encoder():
+    from tokenizers import Tokenizer
+    spec = importlib.util.spec_from_file_location("dsv41_reference", ASSETS / "encoding_v41.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return Tokenizer.from_file(str(ASSETS / "deepseek-v41-tokenizer.json")), module
+
+
 def count_messages(model, messages, response_format=None):
     if (not isinstance(messages, list) or not messages or
             any(not isinstance(message, dict) or set(message) - {"role", "content"} or
@@ -71,6 +81,14 @@ def count_messages(model, messages, response_format=None):
         tokenizer, reference = _deepseek_encoder()
         # The published reference includes role delimiters and generation prefix.
         rendered = reference.encode_messages(deepcopy(messages), thinking_mode="thinking", reasoning_effort="high")
+        return len(tokenizer.encode(rendered, add_special_tokens=False).ids)
+    if model == "deepseek/deepseek-v4.1-flash":
+        if ([m["role"] for m in messages] not in (["system", "user"], ["system", "user", "user"])
+                or response_format not in (None, {"type": "json_object"})):
+            raise ContextBudgetError("hermes_counter_uncalibrated_deepseek_flash_plus_shape")
+        tokenizer, reference = _deepseek_v41_encoder()
+        rendered = reference.encode_messages(deepcopy(messages), thinking_mode="thinking",
+                                              reasoning_effort="high")
         return len(tokenizer.encode(rendered, add_special_tokens=False).ids)
     if model == "openai/gpt-6-luna":
         import tiktoken
@@ -178,7 +196,7 @@ def prepare_admission(body, certificates=None, counter=count_messages):
             body.get("tools") or body.get("stream")):
         raise ContextBudgetError("hermes_context_budget_invalid")
     model = body.get("model")
-    expected_code = {"openai/gpt-6-luna": "gpt_luna", "deepseek/deepseek-v4-flash": "deepseek_flash", "openai/gpt-6.1-terra": "gpt_terra"}.get(model)
+    expected_code = {"openai/gpt-6-luna": "gpt_luna", "deepseek/deepseek-v4-flash": "deepseek_flash", "openai/gpt-6.1-terra": "gpt_terra", "deepseek/deepseek-v4.1-flash": "deepseek_flash_plus"}.get(model)
     if expected_code is None or body.get("tp_dialogue_model") != expected_code:
         raise ContextBudgetError("hermes_context_dialogue_route_required")
     _verify_embedded_method(body)
@@ -318,10 +336,14 @@ def admit_provider_call(agent, api_kwargs):
     extra = api_kwargs.get("extra_body") or {}
     expected_provider = ({"only": ["openai"], "allow_fallbacks": False, "max_price": PRICE_CAPS[original["model"]]}
         if original["model"] in {"openai/gpt-6-luna", "openai/gpt-6.1-terra"} else {
-            "order": ["deepinfra/fp8", "gmicloud/fp8"], "only": ["deepinfra/fp8", "gmicloud/fp8"],
-            "allow_fallbacks": True, "max_price": PRICE_CAPS[original["model"]]})
+            "order": ["deepinfra/fp8"], "only": ["deepinfra/fp8"],
+            "allow_fallbacks": False, "max_price": PRICE_CAPS[original["model"]]})
+    if original["model"] == "deepseek/deepseek-v4-flash":
+        expected_provider = {"order": ["deepinfra/fp8", "gmicloud/fp8"],
+            "only": ["deepinfra/fp8", "gmicloud/fp8"], "allow_fallbacks": True,
+            "max_price": PRICE_CAPS[original["model"]]}
     expected_effort = "medium" if original["model"] == "openai/gpt-6.1-terra" else "high"
-    if original["model"] == "openai/gpt-6.1-terra":
+    if original["model"] in {"openai/gpt-6.1-terra", "deepseek/deepseek-v4.1-flash"}:
         expected_provider["require_parameters"] = True
     if (extra.get("provider") != expected_provider or extra.get("service_tier") != "default"
             or extra.get("reasoning", {}).get("effort") != expected_effort
