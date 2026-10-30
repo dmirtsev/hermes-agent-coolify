@@ -24,8 +24,8 @@ PROFILES = {
     # certificate and calibration evidence are committed.
     "deepseek_flash_plus": {
         "model": "deepseek/deepseek-v4.1-flash",
-        "providers": ["deepinfra/fp8", "gmicloud/fp8"],
-        "max_price": {"prompt": 0.2, "completion": 1.2},
+        "providers": ["deepinfra/fp8"],
+        "max_price": {"prompt": 0.2, "completion": 0.6},
     },
     "gpt_luna": {"model": "openai/gpt-6-luna", "provider": "openai", "reasoning_effort": "high"},
     "gpt_terra": {"model": "openai/gpt-6.1-terra", "provider": "openai", "reasoning_effort": "medium"},
@@ -164,7 +164,7 @@ def dialogue_agent_settings(code, runtime_kwargs, model, reasoning_config, fallb
         extra["provider"] = {
             "order": list(profile["providers"]),
             "only": list(profile["providers"]),
-            "allow_fallbacks": True,
+            "allow_fallbacks": code == "deepseek_flash",
             "max_price": dict(profile["max_price"]),
         }
         # The outer conversation loop owns retries for this route.  Keep the

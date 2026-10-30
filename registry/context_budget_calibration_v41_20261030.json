@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "date": "2026-10-30",
+  "syntheticOnly": true,
+  "model": "deepseek/deepseek-v4.1-flash",
+  "provider": "deepinfra/fp8",
+  "route": "openrouter:deepinfra-fp8:deepseek-v4.1-flash:high:json-or-text-v1",
+  "counter": "deepseek-v4.1-official-reference",
+  "encodingSha256": "13231c592e958fb39e2af6001dae69d90e7a36b265702b9b390236fb387599e2",
+  "tokenizerSha256": "c90dfa01249db1be4245780a052ede752e1361c612ac6d08e2bdada7d599476b",
+  "contextWindow": 1048576,
+  "framingUpperCorrection": 128,
+  "cases": [
+    {"id":"moment-json","localTokens":21326,"providerTokens":21301,"delta":-25},
+    {"id":"period30-json","localTokens":34377,"providerTokens":34352,"delta":-25},
+    {"id":"period90-json","localTokens":62035,"providerTokens":62010,"delta":-25},
+    {"id":"moment-text","localTokens":21326,"providerTokens":21326,"delta":0},
+    {"id":"period30-text","localTokens":34377,"providerTokens":34377,"delta":0},
+    {"id":"period90-text","localTokens":62035,"providerTokens":62035,"delta":0}
+  ],
+  "scope": ["system", "user", "assistant-history", "text", "json_object"],
+  "limitations": [
+    "Only DeepInfra fp8 is certified; no provider fallback is allowed.",
+    "Synthetic evidence only; no images, tools, or alternate framing.",
+    "The 128-token additive correction is conservative for these shapes.",
+    "This evidence does not certify arbitrary future message shapes."
+  ]
+}

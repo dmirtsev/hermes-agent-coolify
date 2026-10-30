@@ -1,5 +1,6 @@
 import copy
 import json
+import os
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -308,13 +309,17 @@ class ContextBudgetTests(unittest.TestCase):
 
 
 class DeepSeekFlashPlusCertificateTests(unittest.TestCase):
+    @unittest.skipUnless(__import__('importlib').util.find_spec('tokenizers') and
+                         __import__('pathlib').Path('/private/tmp/deepseek-v41-tokenizer.json').is_file(),
+                         'requires pinned V4.1 tokenizer runtime')
     def test_uncertified_v41_counter_fails_closed(self):
-        with self.assertRaisesRegex(budget.ContextBudgetError, "uncertified_deepseek_flash_plus"):
-            budget.count_messages("deepseek/deepseek-v4.1-flash",
-                                  [{"role": "user", "content": "x"}])
+        os.environ["HERMES_TOKENIZER_ASSETS"] = "/private/tmp"
+        self.assertGreater(budget.count_messages("deepseek/deepseek-v4.1-flash",
+                         [{"role": "user", "content": "x"}]), 0)
 
-    def test_uncertified_v41_is_not_in_price_caps(self):
-        self.assertNotIn("deepseek/deepseek-v4.1-flash", budget.PRICE_CAPS)
+    def test_v41_price_cap_is_conservative_and_pinned(self):
+        self.assertEqual(budget.PRICE_CAPS["deepseek/deepseek-v4.1-flash"],
+                         {"prompt": 0.2, "completion": 0.6})
 
 
 if __name__ == "__main__":

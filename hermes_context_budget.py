@@ -32,7 +32,7 @@ PRICE_CAPS = {
     "deepseek/deepseek-v4-flash": {"prompt": 0.1, "completion": 0.5},
     # Ceiling in USD/M tokens, kept separate from the provider's live tariff.
     "openai/gpt-6.1-terra": {"prompt": 2.5, "completion": 7.5},
-    # Deliberately no V4.1 entry: pricing alone is not a route certificate.
+    "deepseek/deepseek-v4.1-flash": {"prompt": 0.2, "completion": 0.6},
 }
 ASSETS = Path(os.environ.get("HERMES_TOKENIZER_ASSETS", "/opt/hermes/tokenizers"))
 CERTIFICATES = Path(__file__).with_name("context_budget_routes.json")
@@ -62,6 +62,15 @@ def _deepseek_encoder():
     return Tokenizer.from_file(str(ASSETS / "deepseek-tokenizer.json")), module
 
 
+@lru_cache(maxsize=1)
+def _deepseek_v41_encoder():
+    from tokenizers import Tokenizer
+    spec = importlib.util.spec_from_file_location("dsv41_reference", ASSETS / "encoding_v41.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return Tokenizer.from_file(str(ASSETS / "deepseek-v41-tokenizer.json")), module
+
+
 def count_messages(model, messages, response_format=None):
     if (not isinstance(messages, list) or not messages or
             any(not isinstance(message, dict) or set(message) - {"role", "content"} or
@@ -72,6 +81,11 @@ def count_messages(model, messages, response_format=None):
         tokenizer, reference = _deepseek_encoder()
         # The published reference includes role delimiters and generation prefix.
         rendered = reference.encode_messages(deepcopy(messages), thinking_mode="thinking", reasoning_effort="high")
+        return len(tokenizer.encode(rendered, add_special_tokens=False).ids)
+    if model == "deepseek/deepseek-v4.1-flash":
+        tokenizer, reference = _deepseek_v41_encoder()
+        rendered = reference.encode_messages(deepcopy(messages), thinking_mode="thinking",
+                                              reasoning_effort="high")
         return len(tokenizer.encode(rendered, add_special_tokens=False).ids)
     if model == "openai/gpt-6-luna":
         import tiktoken
@@ -89,8 +103,6 @@ def count_messages(model, messages, response_format=None):
         encoder = tiktoken.get_encoding("o200k_base")
         return 3 + sum(3 + len(encoder.encode(m["role"], disallowed_special=())) +
                        len(encoder.encode(m["content"], disallowed_special=())) for m in messages)
-    if model == "deepseek/deepseek-v4.1-flash":
-        raise ContextBudgetError("hermes_counter_uncertified_deepseek_flash_plus")
     raise ContextBudgetError("hermes_counter_model_unavailable")
 
 
