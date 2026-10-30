@@ -55,6 +55,12 @@ def deepseek_flash_plus_enabled(env=None):
             and env.get("HERMES_DEEPSEEK_FLASH_PLUS_ENABLED") == "true")
 
 
+def deepseek_flash_plus_certified():
+    # Deliberately false until the independently verified V4.1 route
+    # certificate and calibration evidence are committed.
+    return False
+
+
 def _verified_transit_moment(body):
     """Recognise the existing saved-composition moment wire shape.
 
@@ -107,7 +113,8 @@ def validate_dialogue_model(body, idempotency_key, env=None):
         raise DialogueModelError("dialogue_model_invalid")
     if not choice_enabled(env):
         raise DialogueModelError("dialogue_model_choice_unavailable")
-    if code == "deepseek_flash_plus" and not deepseek_flash_plus_enabled(env):
+    if code == "deepseek_flash_plus" and (not deepseek_flash_plus_enabled(env)
+                                          or not deepseek_flash_plus_certified()):
         raise DialogueModelError("dialogue_model_deepseek_flash_plus_unavailable")
     if code == "deepseek_flash_plus" and not isinstance(body.get("tp_context_budget"), dict):
         raise DialogueModelError("dialogue_model_deepseek_flash_plus_budget_required")
@@ -133,7 +140,8 @@ def dialogue_agent_settings(code, runtime_kwargs, model, reasoning_config, fallb
         raise DialogueModelError("dialogue_model_choice_unavailable")
     if code == "gpt_terra" and not terra_enabled():
         raise DialogueModelError("dialogue_model_terra_unavailable")
-    if code == "deepseek_flash_plus" and not deepseek_flash_plus_enabled():
+    if code == "deepseek_flash_plus" and (not deepseek_flash_plus_enabled()
+                                          or not deepseek_flash_plus_certified()):
         raise DialogueModelError("dialogue_model_deepseek_flash_plus_unavailable")
     if (runtime_kwargs.get("provider") != "openrouter" or
             runtime_kwargs.get("base_url", "").rstrip("/") != "https://openrouter.ai/api/v1"):

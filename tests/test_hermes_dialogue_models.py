@@ -51,6 +51,10 @@ class DialogueModelsTests(unittest.TestCase):
     def test_validate_choice_before_dispatch(self):
         for code, profile in models.PROFILES.items():
             body = {"model": profile["model"], "tp_dialogue_model": code}
+            if code == "deepseek_flash_plus":
+                # Candidate route is intentionally fail-closed until its
+                # certificate exists; it is tested by dedicated guards below.
+                continue
             if code == "gpt_terra":
                 body.update(tp_context_budget={"profile": "natal_transit"}, tp_managed_method_context={"synthetic": True})
             self.assertEqual(models.validate_dialogue_model(body, "stable-request", TERRA_ENABLED), code)
@@ -253,14 +257,25 @@ class DeepSeekFlashPlusGuardTests(unittest.TestCase):
                "HERMES_DEEPSEEK_FLASH_PLUS_ENABLED": "true"}
         self.assertFalse(models.deepseek_flash_plus_enabled(env))
 
-    def test_plus_requires_budget_even_when_flagged(self):
+    def test_plus_stays_closed_even_when_flagged_and_budgeted(self):
         env = {**ENABLED, "DEPLOYMENT_ENVIRONMENT": "test",
                "HERMES_DEEPSEEK_FLASH_PLUS_ENABLED": "true"}
         body = {"model": "deepseek/deepseek-v4.1-flash",
                 "tp_dialogue_model": "deepseek_flash_plus",
                 "messages": [{"role": "user", "content": "x"}]}
-        with self.assertRaisesRegex(models.DialogueModelError, "budget_required"):
+        with self.assertRaisesRegex(models.DialogueModelError, "unavailable"):
             models.validate_dialogue_model(body, "operation", env)
+
+    def test_uncertified_plus_cannot_create_provider_agent(self):
+        env = {**ENABLED, "DEPLOYMENT_ENVIRONMENT": "test",
+               "HERMES_DEEPSEEK_FLASH_PLUS_ENABLED": "true"}
+        with patch.dict(os.environ, env, clear=True):
+            with self.assertRaisesRegex(models.DialogueModelError, "unavailable"):
+                models.dialogue_agent_settings(
+                    "deepseek_flash_plus",
+                    {"provider": "openrouter",
+                     "base_url": "https://openrouter.ai/api/v1"},
+                    "deepseek/deepseek-v4.1-flash", {}, None)
 
 
 if __name__ == "__main__":
