@@ -53,8 +53,12 @@ def terra_enabled(env=None):
 
 def deepseek_flash_plus_enabled(env=None):
     env = os.environ if env is None else env
+    raw_cap = env.get("HERMES_DEEPSEEK_FLASH_PLUS_MAX_CHARGE_KOPECKS")
     return (choice_enabled(env) and env.get("DEPLOYMENT_ENVIRONMENT") == "test"
-            and env.get("HERMES_DEEPSEEK_FLASH_PLUS_ENABLED") == "true")
+            and env.get("HERMES_DEEPSEEK_FLASH_PLUS_ENABLED") == "true"
+            and env.get("HERMES_DEEPSEEK_FLASH_PLUS_BACKEND_CAPABILITY") == "true"
+            and isinstance(raw_cap, str) and raw_cap.isdigit() and int(raw_cap) > 0
+            and bool(env.get("HERMES_DEEPSEEK_FLASH_PLUS_PRICE_POLICY_VERSION", "").strip()))
 
 
 def deepseek_flash_plus_certified():
@@ -194,6 +198,8 @@ def dialogue_agent_settings(code, runtime_kwargs, model, reasoning_config, fallb
         if code == "gpt_terra":
             extra["provider"].update(require_parameters=True,
                                      max_price={"prompt": 2.5, "completion": 7.5})
+    if code == "deepseek_flash_plus":
+        extra["provider"]["require_parameters"] = True
     extra["service_tier"] = "default"
     extra["reasoning"] = {"effort": profile.get("reasoning_effort", "high")}
     kwargs["max_tokens"] = 8192
