@@ -272,6 +272,19 @@ class DeepSeekFlashPlusGuardTests(unittest.TestCase):
         with self.assertRaisesRegex(models.DialogueModelError, "budget_required"):
             models.validate_dialogue_model(body, "operation", env)
 
+    def test_plus_rejects_natal_and_free_routes(self):
+        env = {**ENABLED, "DEPLOYMENT_ENVIRONMENT": "test",
+               "HERMES_DEEPSEEK_FLASH_PLUS_ENABLED": "true",
+               "HERMES_DEEPSEEK_FLASH_PLUS_BACKEND_CAPABILITY": "true",
+               "HERMES_DEEPSEEK_FLASH_PLUS_MAX_CHARGE_KOPECKS": "5000",
+               "HERMES_DEEPSEEK_FLASH_PLUS_PRICE_POLICY_VERSION": "policy-v1"}
+        body = {"model": "deepseek/deepseek-v4.1-flash",
+                "tp_dialogue_model": "deepseek_flash_plus",
+                "tp_context_budget": {"profile": "natal"},
+                "tp_dialogue_mode": "free_dialogue"}
+        with self.assertRaisesRegex(models.DialogueModelError, "transit_only"):
+            models.validate_dialogue_model(body, "operation", env)
+
     def test_certified_plus_pins_provider_without_fallback(self):
         env = {**ENABLED, "DEPLOYMENT_ENVIRONMENT": "test",
                "HERMES_DEEPSEEK_FLASH_PLUS_ENABLED": "true",

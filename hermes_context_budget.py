@@ -338,6 +338,10 @@ def admit_provider_call(agent, api_kwargs):
         if original["model"] in {"openai/gpt-6-luna", "openai/gpt-6.1-terra"} else {
             "order": ["deepinfra/fp8"], "only": ["deepinfra/fp8"],
             "allow_fallbacks": False, "max_price": PRICE_CAPS[original["model"]]})
+    if original["model"] == "deepseek/deepseek-v4-flash":
+        expected_provider = {"order": ["deepinfra/fp8", "gmicloud/fp8"],
+            "only": ["deepinfra/fp8", "gmicloud/fp8"], "allow_fallbacks": True,
+            "max_price": PRICE_CAPS[original["model"]]}
     expected_effort = "medium" if original["model"] == "openai/gpt-6.1-terra" else "high"
     if original["model"] in {"openai/gpt-6.1-terra", "deepseek/deepseek-v4.1-flash"}:
         expected_provider["require_parameters"] = True

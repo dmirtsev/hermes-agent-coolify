@@ -142,6 +142,14 @@ def validate_dialogue_model(body, idempotency_key, env=None):
         raise DialogueModelError("dialogue_model_deepseek_flash_plus_unavailable")
     if code == "deepseek_flash_plus" and not isinstance(body.get("tp_context_budget"), dict):
         raise DialogueModelError("dialogue_model_deepseek_flash_plus_budget_required")
+    if code == "deepseek_flash_plus" and (
+            (body.get("tp_context_budget") or {}).get("profile") != "natal_transit" or
+            body.get("tp_dialogue_mode") == "free_dialogue" or
+            (not body.get("tp_managed_method_context") and
+             (body.get("tp_execution_mode") != "interpretation_facts_v1" or
+              body.get("tp_answer_format") != "hermes_managed_v1" or
+              not _verified_transit_moment(body)))):
+        raise DialogueModelError("dialogue_model_deepseek_flash_plus_transit_only")
     if code == "gpt_terra" and (not terra_enabled(env) or
             (body.get("tp_context_budget") or {}).get("profile") != "natal_transit" or
             body.get("tp_dialogue_mode") == "free_dialogue" or
