@@ -315,7 +315,8 @@ class DeepSeekFlashPlusCertificateTests(unittest.TestCase):
     def test_uncertified_v41_counter_fails_closed(self):
         os.environ["HERMES_TOKENIZER_ASSETS"] = "/private/tmp"
         self.assertGreater(budget.count_messages("deepseek/deepseek-v4.1-flash",
-                         [{"role": "user", "content": "x"}]), 0)
+                         [{"role": "system", "content": "x"},
+                          {"role": "user", "content": "x"}]), 0)
 
     def test_v41_price_cap_is_conservative_and_pinned(self):
         self.assertEqual(budget.PRICE_CAPS["deepseek/deepseek-v4.1-flash"],

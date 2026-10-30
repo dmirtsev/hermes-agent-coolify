@@ -83,6 +83,9 @@ def count_messages(model, messages, response_format=None):
         rendered = reference.encode_messages(deepcopy(messages), thinking_mode="thinking", reasoning_effort="high")
         return len(tokenizer.encode(rendered, add_special_tokens=False).ids)
     if model == "deepseek/deepseek-v4.1-flash":
+        if ([m["role"] for m in messages] not in (["system", "user"], ["system", "user", "user"])
+                or response_format not in (None, {"type": "json_object"})):
+            raise ContextBudgetError("hermes_counter_uncalibrated_deepseek_flash_plus_shape")
         tokenizer, reference = _deepseek_v41_encoder()
         rendered = reference.encode_messages(deepcopy(messages), thinking_mode="thinking",
                                               reasoning_effort="high")
@@ -333,10 +336,10 @@ def admit_provider_call(agent, api_kwargs):
     extra = api_kwargs.get("extra_body") or {}
     expected_provider = ({"only": ["openai"], "allow_fallbacks": False, "max_price": PRICE_CAPS[original["model"]]}
         if original["model"] in {"openai/gpt-6-luna", "openai/gpt-6.1-terra"} else {
-            "order": ["deepinfra/fp8", "gmicloud/fp8"], "only": ["deepinfra/fp8", "gmicloud/fp8"],
-            "allow_fallbacks": True, "max_price": PRICE_CAPS[original["model"]]})
+            "order": ["deepinfra/fp8"], "only": ["deepinfra/fp8"],
+            "allow_fallbacks": False, "max_price": PRICE_CAPS[original["model"]]})
     expected_effort = "medium" if original["model"] == "openai/gpt-6.1-terra" else "high"
-    if original["model"] == "openai/gpt-6.1-terra":
+    if original["model"] in {"openai/gpt-6.1-terra", "deepseek/deepseek-v4.1-flash"}:
         expected_provider["require_parameters"] = True
     if (extra.get("provider") != expected_provider or extra.get("service_tier") != "default"
             or extra.get("reasoning", {}).get("effort") != expected_effort

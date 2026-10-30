@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import os
 import json
+import hashlib
+from pathlib import Path
 from copy import deepcopy
 if __package__:
     from .hermes_managed_validation import _rows, ManagedValidationContextError
@@ -56,9 +58,27 @@ def deepseek_flash_plus_enabled(env=None):
 
 
 def deepseek_flash_plus_certified():
-    # Deliberately false until the independently verified V4.1 route
-    # certificate and calibration evidence are committed.
-    return False
+    root = Path(__file__).parent
+    route = root / "context_budget_routes.json"
+    evidence = root / "context_budget_calibration_v41_20261030.json"
+    if not route.exists():
+        route = root / "registry" / route.name
+        evidence = root / "registry" / evidence.name
+    try:
+        data = json.loads(route.read_text())["deepseek/deepseek-v4.1-flash"]
+        evidence_data = json.loads(evidence.read_text())
+        digest = hashlib.sha256(evidence.read_bytes()).hexdigest()
+        return (data.get("accuracy") == "calibrated" and
+                data.get("evidenceSha256") == digest and
+                data.get("contextWindow", 0) >= 142592 and
+                len(evidence_data.get("cases", [])) >= 7 and
+                all(isinstance(case.get("messagesSha256"), str) and
+                    len(case["messagesSha256"]) == 64 and
+                    isinstance(case.get("generationId"), str) and
+                    isinstance(case.get("providerInputTokens"), int)
+                    for case in evidence_data["cases"]))
+    except (OSError, KeyError, TypeError, ValueError):
+        return False
 
 
 def _verified_transit_moment(body):
@@ -183,5 +203,6 @@ def dialogue_agent_settings(code, runtime_kwargs, model, reasoning_config, fallb
 def public_dialogue_models():
     return {"version": 1, "codes": [code for code in PROFILES
             if (code != "gpt_terra" or terra_enabled())
-            and (code != "deepseek_flash_plus" or deepseek_flash_plus_enabled())
-            and code != "deepseek_flash_plus"]} if choice_enabled() else None
+            and (code != "deepseek_flash_plus" or
+                 (deepseek_flash_plus_enabled() and deepseek_flash_plus_certified()))
+            ]} if choice_enabled() else None

@@ -36,7 +36,7 @@
     "contextWindow": 1048576,
     "accuracy": "calibrated",
     "framingUpperCorrection": 128,
-    "evidenceSha256": "27d54cbd335bb2136f35e98f8c2f3e0b336a0ff9692d463df98b2f8dc13defa5",
+    "evidenceSha256": "826e59aae35de857e8f455d835c6bae594623ec44faea4e3a5d2e64818a0d540",
     "evidenceFile": "context_budget_calibration_v41_20261030.json"
   }
 }
