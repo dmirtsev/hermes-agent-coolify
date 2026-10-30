@@ -20,6 +20,13 @@ PROFILES = {
         "providers": ["deepinfra/fp8", "gmicloud/fp8"],
         "max_price": {"prompt": 0.5, "completion": 1.5},
     },
+    # Test-only candidate.  Admission remains closed until a signed route
+    # certificate and calibration evidence are committed.
+    "deepseek_flash_plus": {
+        "model": "deepseek/deepseek-v4.1-flash",
+        "providers": ["deepinfra/fp8", "gmicloud/fp8"],
+        "max_price": {"prompt": 0.2, "completion": 1.2},
+    },
     "gpt_luna": {"model": "openai/gpt-6-luna", "provider": "openai", "reasoning_effort": "high"},
     "gpt_terra": {"model": "openai/gpt-6.1-terra", "provider": "openai", "reasoning_effort": "medium"},
 }
@@ -40,6 +47,12 @@ def terra_enabled(env=None):
     env = os.environ if env is None else env
     return (choice_enabled(env) and env.get("DEPLOYMENT_ENVIRONMENT") == "test"
             and env.get("HERMES_TERRA_PERIODS_ENABLED") == "true")
+
+
+def deepseek_flash_plus_enabled(env=None):
+    env = os.environ if env is None else env
+    return (choice_enabled(env) and env.get("DEPLOYMENT_ENVIRONMENT") == "test"
+            and env.get("HERMES_DEEPSEEK_FLASH_PLUS_ENABLED") == "true")
 
 
 def _verified_transit_moment(body):
@@ -94,6 +107,10 @@ def validate_dialogue_model(body, idempotency_key, env=None):
         raise DialogueModelError("dialogue_model_invalid")
     if not choice_enabled(env):
         raise DialogueModelError("dialogue_model_choice_unavailable")
+    if code == "deepseek_flash_plus" and not deepseek_flash_plus_enabled(env):
+        raise DialogueModelError("dialogue_model_deepseek_flash_plus_unavailable")
+    if code == "deepseek_flash_plus" and not isinstance(body.get("tp_context_budget"), dict):
+        raise DialogueModelError("dialogue_model_deepseek_flash_plus_budget_required")
     if code == "gpt_terra" and (not terra_enabled(env) or
             (body.get("tp_context_budget") or {}).get("profile") != "natal_transit" or
             body.get("tp_dialogue_mode") == "free_dialogue" or
@@ -116,6 +133,8 @@ def dialogue_agent_settings(code, runtime_kwargs, model, reasoning_config, fallb
         raise DialogueModelError("dialogue_model_choice_unavailable")
     if code == "gpt_terra" and not terra_enabled():
         raise DialogueModelError("dialogue_model_terra_unavailable")
+    if code == "deepseek_flash_plus" and not deepseek_flash_plus_enabled():
+        raise DialogueModelError("dialogue_model_deepseek_flash_plus_unavailable")
     if (runtime_kwargs.get("provider") != "openrouter" or
             runtime_kwargs.get("base_url", "").rstrip("/") != "https://openrouter.ai/api/v1"):
         raise DialogueModelError("dialogue_model_runtime_mismatch")
@@ -131,7 +150,7 @@ def dialogue_agent_settings(code, runtime_kwargs, model, reasoning_config, fallb
     extra = overrides.setdefault("extra_body", {})
     for key in ("models", "route", "reasoning"):
         extra.pop(key, None)
-    if code == "deepseek_flash":
+    if code in {"deepseek_flash", "deepseek_flash_plus"}:
         # OpenRouter may fail over only between the two approved endpoints for
         # this exact model; no other model or provider is admissible.
         extra["provider"] = {
@@ -155,4 +174,6 @@ def dialogue_agent_settings(code, runtime_kwargs, model, reasoning_config, fallb
 
 def public_dialogue_models():
     return {"version": 1, "codes": [code for code in PROFILES
-            if code != "gpt_terra" or terra_enabled()]} if choice_enabled() else None
+            if (code != "gpt_terra" or terra_enabled())
+            and (code != "deepseek_flash_plus" or deepseek_flash_plus_enabled())
+            and code != "deepseek_flash_plus"]} if choice_enabled() else None

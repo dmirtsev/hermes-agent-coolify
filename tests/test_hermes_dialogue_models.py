@@ -240,5 +240,28 @@ class PatchedConstructorTests(unittest.TestCase):
             self.assertTrue(agent.skip_memory)
 
 
+class DeepSeekFlashPlusGuardTests(unittest.TestCase):
+    def test_feature_flag_is_test_only_and_not_public(self):
+        env = {**ENABLED, "DEPLOYMENT_ENVIRONMENT": "test",
+               "HERMES_DEEPSEEK_FLASH_PLUS_ENABLED": "true"}
+        self.assertTrue(models.deepseek_flash_plus_enabled(env))
+        with patch.dict(os.environ, env, clear=True):
+            self.assertNotIn("deepseek_flash_plus", models.public_dialogue_models()["codes"])
+
+    def test_feature_flag_is_disabled_outside_test(self):
+        env = {**ENABLED, "DEPLOYMENT_ENVIRONMENT": "production",
+               "HERMES_DEEPSEEK_FLASH_PLUS_ENABLED": "true"}
+        self.assertFalse(models.deepseek_flash_plus_enabled(env))
+
+    def test_plus_requires_budget_even_when_flagged(self):
+        env = {**ENABLED, "DEPLOYMENT_ENVIRONMENT": "test",
+               "HERMES_DEEPSEEK_FLASH_PLUS_ENABLED": "true"}
+        body = {"model": "deepseek/deepseek-v4.1-flash",
+                "tp_dialogue_model": "deepseek_flash_plus",
+                "messages": [{"role": "user", "content": "x"}]}
+        with self.assertRaisesRegex(models.DialogueModelError, "budget_required"):
+            models.validate_dialogue_model(body, "operation", env)
+
+
 if __name__ == "__main__":
     unittest.main()

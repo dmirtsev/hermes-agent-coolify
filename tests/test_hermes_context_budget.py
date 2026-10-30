@@ -307,5 +307,15 @@ class ContextBudgetTests(unittest.TestCase):
         self.assertTrue(budget.readable_managed_part('Законченная часть ответа.', False))
 
 
+class DeepSeekFlashPlusCertificateTests(unittest.TestCase):
+    def test_uncertified_v41_counter_fails_closed(self):
+        with self.assertRaisesRegex(budget.ContextBudgetError, "uncertified_deepseek_flash_plus"):
+            budget.count_messages("deepseek/deepseek-v4.1-flash",
+                                  [{"role": "user", "content": "x"}])
+
+    def test_uncertified_v41_is_not_in_price_caps(self):
+        self.assertNotIn("deepseek/deepseek-v4.1-flash", budget.PRICE_CAPS)
+
+
 if __name__ == "__main__":
     unittest.main()

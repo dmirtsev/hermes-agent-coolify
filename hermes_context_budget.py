@@ -32,6 +32,7 @@ PRICE_CAPS = {
     "deepseek/deepseek-v4-flash": {"prompt": 0.1, "completion": 0.5},
     # Ceiling in USD/M tokens, kept separate from the provider's live tariff.
     "openai/gpt-6.1-terra": {"prompt": 2.5, "completion": 7.5},
+    # Deliberately no V4.1 entry: pricing alone is not a route certificate.
 }
 ASSETS = Path(os.environ.get("HERMES_TOKENIZER_ASSETS", "/opt/hermes/tokenizers"))
 CERTIFICATES = Path(__file__).with_name("context_budget_routes.json")
@@ -88,6 +89,8 @@ def count_messages(model, messages, response_format=None):
         encoder = tiktoken.get_encoding("o200k_base")
         return 3 + sum(3 + len(encoder.encode(m["role"], disallowed_special=())) +
                        len(encoder.encode(m["content"], disallowed_special=())) for m in messages)
+    if model == "deepseek/deepseek-v4.1-flash":
+        raise ContextBudgetError("hermes_counter_uncertified_deepseek_flash_plus")
     raise ContextBudgetError("hermes_counter_model_unavailable")
 
 
@@ -178,7 +181,7 @@ def prepare_admission(body, certificates=None, counter=count_messages):
             body.get("tools") or body.get("stream")):
         raise ContextBudgetError("hermes_context_budget_invalid")
     model = body.get("model")
-    expected_code = {"openai/gpt-6-luna": "gpt_luna", "deepseek/deepseek-v4-flash": "deepseek_flash", "openai/gpt-6.1-terra": "gpt_terra"}.get(model)
+    expected_code = {"openai/gpt-6-luna": "gpt_luna", "deepseek/deepseek-v4-flash": "deepseek_flash", "openai/gpt-6.1-terra": "gpt_terra", "deepseek/deepseek-v4.1-flash": "deepseek_flash_plus"}.get(model)
     if expected_code is None or body.get("tp_dialogue_model") != expected_code:
         raise ContextBudgetError("hermes_context_dialogue_route_required")
     _verify_embedded_method(body)
