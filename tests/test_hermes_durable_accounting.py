@@ -102,6 +102,29 @@ class DurableAccountingTests(unittest.TestCase):
                 "cabinet-1", digest, {"final_response": "changed"}, usage
             )
 
+    def test_safe_view_reports_only_verified_managed_terminal_failures(self):
+        for index, code in enumerate(("managed_transit_validation_exhausted", "managed_transit_validation_unavailable")):
+            key=f"managed-terminal-{index}"; digest=_payload(key)
+            durable.begin_request(key,digest)
+            durable.record_generation_evidence(_pending_generation(f"gen-{index}"), "configured/model", request_key=key)
+            durable.complete_request(key,digest,{"failed":True,"completed":False,"final_response":"", "error":code,
+                "messages":[{"content":"private text"}], "chain":"private chain"}, {"total_tokens":1})
+            view=durable.get_request_view(key)
+            self.assertEqual(view["state"],"completed")
+            self.assertEqual(view["terminal_outcome"],{"code":code,"answer_available":False})
+            self.assertNotIn("private text",str(view));self.assertNotIn("private chain",str(view))
+            self.assertIn("accounting",view)
+            self.assertEqual(view["evidence"]["generation_ids"],[f"gen-{index}"])
+            self.assertEqual(view["accounting"]["model_execution"]["upstream_generation_ids"],[f"gen-{index}"])
+
+    def test_safe_view_does_not_infer_terminal_outcome_from_partial_or_other_results(self):
+        base={"failed":True,"completed":False,"final_response":"", "error":"managed_transit_validation_exhausted"}
+        for index, override in enumerate(({"failed":False},{"completed":True},{"final_response":"answer"},
+                {"error":"other_error"},{"completed":None},{"final_response":None},{"error":None})):
+            key=f"not-managed-terminal-{index}";digest=_payload(key)
+            durable.begin_request(key,digest);durable.complete_request(key,digest,{**base,**override},{"total_tokens":1})
+            self.assertNotIn("terminal_outcome",durable.get_request_view(key))
+
     def test_same_key_in_flight_and_different_payload_are_blocked(self):
         digest = _payload("one")
         durable.begin_request("cabinet-2", digest)

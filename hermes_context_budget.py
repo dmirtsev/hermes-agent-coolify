@@ -28,6 +28,8 @@ else:
         prepare_managed_transit_context, managed_transit_issues, managed_transit_repair_prompt)
 
 CONTRACT = "hermes-context-budget-v1"
+CONTRACT_V2 = "hermes-context-budget-v2"
+OUTPUT_TOKENS_V2 = 32768
 OUTPUT_TOKENS = 8192
 PRICE_CAPS = {
     "openai/gpt-6-luna": {"prompt": 0.125, "completion": 0.5},
@@ -36,6 +38,21 @@ PRICE_CAPS = {
     "openai/gpt-6.1-terra": {"prompt": 2.5, "completion": 7.5},
     "deepseek/deepseek-v4.1-flash": {"prompt": 0.2, "completion": 0.6},
 }
+# Immutable policy IDs are carried by the authenticated Cabinet attempt control.
+# Absence means the historical v1 ceiling and preserves in-flight operations.
+BANDED_PRICE_POLICY = "hermes-provider-ceilings-v2"
+
+def attempt_price_cap(model, input_tokens, policy):
+    if policy not in (None, BANDED_PRICE_POLICY):
+        raise ContextBudgetError("hermes_attempt_reserve_price_policy_invalid")
+    if type(input_tokens) is not int or input_tokens < 0:
+        raise ContextBudgetError("hermes_attempt_reserve_price_policy_invalid")
+    if model not in PRICE_CAPS:
+        raise ContextBudgetError("hermes_context_route_unavailable")
+    if policy == BANDED_PRICE_POLICY and model == "openai/gpt-6-luna" and input_tokens >= 272000:
+        return {"prompt": 0.25, "completion": 0.75}
+    return deepcopy(PRICE_CAPS[model])
+
 ASSETS = Path(os.environ.get("HERMES_TOKENIZER_ASSETS", "/opt/hermes/tokenizers"))
 CERTIFICATES = Path(__file__).with_name("context_budget_routes.json")
 
@@ -64,6 +81,8 @@ def _attempt_descriptor(body):
         raise ContextBudgetError("hermes_attempt_reserve_callback_invalid")
     if not isinstance(value.get("initialAdmission"), dict):
         raise ContextBudgetError("hermes_attempt_reserve_admission_missing")
+    if value.get("pricePolicyVersion") not in (None, BANDED_PRICE_POLICY):
+        raise ContextBudgetError("hermes_attempt_reserve_price_policy_invalid")
     return value
 
 
@@ -266,12 +285,14 @@ def prepare_admission(body, certificates=None, counter=count_messages):
         if body.get("tp_preflight_only"):
             raise ContextBudgetError("hermes_context_budget_required")
         return None
-    if (not isinstance(budget, dict) or budget.get("contract") != CONTRACT or
+    if (not isinstance(budget, dict) or budget.get("contract") not in {CONTRACT, CONTRACT_V2} or
+            (budget.get("contract") == CONTRACT_V2 and budget.get("completionTokens") != OUTPUT_TOKENS_V2) or
             type(budget.get("inputBudget")) is not int or not 1000 <= budget["inputBudget"] <= 1_000_000 or
             budget.get("profile") not in {"natal", "natal_transit"} or
             body.get("tp_answer_format") != "hermes_managed_v1" or
             body.get("tools") or body.get("stream")):
         raise ContextBudgetError("hermes_context_budget_invalid")
+    output_tokens = OUTPUT_TOKENS_V2 if budget["contract"] == CONTRACT_V2 else OUTPUT_TOKENS
     model = body.get("model")
     expected_code = {"openai/gpt-6-luna": "gpt_luna", "deepseek/deepseek-v4-flash": "deepseek_flash", "openai/gpt-6.1-terra": "gpt_terra", "deepseek/deepseek-v4.1-flash": "deepseek_flash_plus"}.get(model)
     if expected_code is None or body.get("tp_dialogue_model") != expected_code:
@@ -297,13 +318,13 @@ def prepare_admission(body, certificates=None, counter=count_messages):
         reason = "hermes_context_counter_unverified"
     elif count > budget["inputBudget"]:
         reason = "hermes_context_input_overflow"
-    elif count + OUTPUT_TOKENS + margin > profile["contextWindow"]:
+    elif count + output_tokens + margin > profile["contextWindow"]:
         reason = "hermes_context_window_overflow"
     return {
-        "contract": CONTRACT, "model": model, "route": profile["route"],
+        "contract": budget["contract"], "model": model, "route": profile["route"],
         "counter": profile["counter"], "counterRevision": profile["counterRevision"],
         "accuracy": accuracy, "inputTokens": count, "inputBudget": budget["inputBudget"],
-        "completionTokens": OUTPUT_TOKENS, "marginTokens": margin,
+        "completionTokens": output_tokens, "marginTokens": margin,
         "contextWindow": profile["contextWindow"], "messagesSha256": digest(body["messages"]),
         "admitted": reason is None, "reason": reason,
     }
@@ -330,7 +351,15 @@ def install_context_budget(agent, body):
         agent.compression_enabled = False
         overrides = deepcopy(getattr(agent, "request_overrides", {}) or {})
         provider = overrides.setdefault("extra_body", {}).setdefault("provider", {})
-        provider["max_price"] = PRICE_CAPS[body["model"]]
+        descriptor = _attempt_descriptor(body)
+        if (body["tp_context_budget"].get("contract") == CONTRACT_V2 and
+                (descriptor is None or descriptor.get("pricePolicyVersion") != BANDED_PRICE_POLICY)):
+            raise ContextBudgetError("hermes_attempt_reserve_required")
+        initial = (descriptor or {}).get("initialAdmission") or body.get("tp_context_admission") or {}
+        policy = (descriptor or {}).get("pricePolicyVersion")
+        tokens = initial.get("inputTokens", 0)
+        provider["max_price"] = attempt_price_cap(body["model"], tokens, policy)
+        agent._tp_context_current_max_price = deepcopy(provider["max_price"])
         agent.request_overrides = overrides
         # A stale/unknown upstream metadata cache must not impose a smaller
         # window than the already validated route receipt.
@@ -394,6 +423,13 @@ def admit_provider_call(agent, api_kwargs):
     if original is None:
         return
     calls = getattr(agent, "_tp_context_model_calls", 0)
+    output_tokens = (original.get("tp_context_admission") or (original.get("tp_attempt_reserve") or {}).get("initialAdmission") or {}).get("completionTokens")
+    if output_tokens is None and (original.get("tp_context_budget") or {}).get("contract") == CONTRACT:
+        output_tokens = OUTPUT_TOKENS
+    contract = (original.get("tp_context_budget") or {}).get("contract", CONTRACT)
+    expected_output = OUTPUT_TOKENS_V2 if contract == CONTRACT_V2 else OUTPUT_TOKENS
+    if contract not in (CONTRACT, CONTRACT_V2) or output_tokens != expected_output:
+        raise ContextBudgetError("hermes_context_provider_contract_changed")
     descriptor = _attempt_descriptor(original)
     if descriptor is not None:
         if __package__:
@@ -402,31 +438,40 @@ def admit_provider_call(agent, api_kwargs):
             from hermes_durable_accounting import request_key_for_agent
         if request_key_for_agent(agent) != descriptor["requestId"]:
             raise ContextBudgetError("hermes_attempt_reserve_request_mismatch")
+    # Ambiguous provider payloads must never cross the transport boundary.
+    if "max_tokens" in api_kwargs and "max_completion_tokens" in api_kwargs:
+        raise ContextBudgetError("hermes_context_provider_contract_changed")
     if api_kwargs.get("model") != original["model"] or api_kwargs.get("tools"):
         raise ContextBudgetError("hermes_context_provider_contract_changed")
     if (calls and getattr(agent, "_tp_managed_transit_context", None) is not None
             and getattr(agent, "_tp_managed_repair_feedback", None)):
         # Length recovery may grow the upstream output limit. Every fresh
-        # managed repair uses the same admitted 8192-token output contract.
+        # managed repair uses the same admitted combined output contract.
         key = getattr(agent, "_tp_context_output_parameter", None)
         if key not in {"max_tokens", "max_completion_tokens"}:
             raise ContextBudgetError("hermes_context_provider_contract_changed")
         api_kwargs.pop("max_completion_tokens" if key == "max_tokens" else "max_tokens", None)
-        api_kwargs[key] = OUTPUT_TOKENS
+        api_kwargs[key] = output_tokens
+    if not calls and output_tokens == OUTPUT_TOKENS_V2:
+        key = "max_tokens" if "max_tokens" in api_kwargs else "max_completion_tokens"
+        if api_kwargs.get(key) != OUTPUT_TOKENS:
+            raise ContextBudgetError("hermes_context_provider_contract_changed")
+        api_kwargs[key] = output_tokens
     if (
-            api_kwargs.get("max_tokens", api_kwargs.get("max_completion_tokens")) != OUTPUT_TOKENS):
+            api_kwargs.get("max_tokens", api_kwargs.get("max_completion_tokens")) != output_tokens):
         raise ContextBudgetError("hermes_context_provider_contract_changed")
     if not calls:
         agent._tp_context_output_parameter = "max_tokens" if "max_tokens" in api_kwargs else "max_completion_tokens"
     extra = api_kwargs.get("extra_body") or {}
-    expected_provider = ({"only": ["openai"], "allow_fallbacks": False, "max_price": PRICE_CAPS[original["model"]]}
+    current_cap = getattr(agent, "_tp_context_current_max_price", PRICE_CAPS[original["model"]])
+    expected_provider = ({"only": ["openai"], "allow_fallbacks": False, "max_price": current_cap}
         if original["model"] in {"openai/gpt-6-luna", "openai/gpt-6.1-terra"} else {
             "order": ["deepinfra/fp8"], "only": ["deepinfra/fp8"],
-            "allow_fallbacks": False, "max_price": PRICE_CAPS[original["model"]]})
+            "allow_fallbacks": False, "max_price": current_cap})
     if original["model"] == "deepseek/deepseek-v4-flash":
         expected_provider = {"order": ["deepinfra/fp8", "gmicloud/fp8"],
             "only": ["deepinfra/fp8", "gmicloud/fp8"], "allow_fallbacks": True,
-            "max_price": PRICE_CAPS[original["model"]]}
+            "max_price": current_cap}
     expected_effort = "medium" if original["model"] == "openai/gpt-6.1-terra" else "high"
     if original["model"] in {"openai/gpt-6.1-terra", "deepseek/deepseek-v4.1-flash"}:
         expected_provider["require_parameters"] = True
@@ -465,6 +510,13 @@ def admit_provider_call(agent, api_kwargs):
     elif calls and descriptor is not None:
         _require_known_previous_attempt(descriptor, calls + 1)
         _authorize_retry(descriptor, receipt, calls + 1)
+    # Only a successfully funded admission can change the provider ceiling.
+    if descriptor is not None and descriptor.get("pricePolicyVersion") == BANDED_PRICE_POLICY:
+        next_cap = attempt_price_cap(original["model"], receipt["inputTokens"], BANDED_PRICE_POLICY)
+        extra["provider"]["max_price"] = deepcopy(next_cap)
+        agent._tp_context_current_max_price = deepcopy(next_cap)
+        if getattr(agent, "request_overrides", None):
+            agent.request_overrides["extra_body"]["provider"]["max_price"] = deepcopy(next_cap)
     # This guard is immediately before transport, after middleware/overrides.
     # Failed admission is not counted as a dispatched provider attempt.
     agent._tp_context_model_calls = calls + 1

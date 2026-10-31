@@ -49,6 +49,66 @@ class AttemptReserveTests(unittest.TestCase):
         return {'accounting':{'generations':[{'cost':{'status':status}} for _ in range(count)]},
                 'evidence':{'has_unresolved_attempt':False}}
 
+    def test_both_output_parameters_are_rejected_before_transport(self):
+        for contract, completion in ((budget.CONTRACT, 8192), (budget.CONTRACT_V2, 32768)):
+            for first, second in ((8192, 32768), (32768, 8192)):
+                with self.subTest(contract=contract, first=first, second=second):
+                    self.agent._tp_context_model_calls = 0
+                    self.body['tp_context_budget'] = {'contract': contract, 'completionTokens': completion}
+                    self.descriptor['initialAdmission']['contract'] = contract
+                    self.descriptor['initialAdmission']['completionTokens'] = completion
+                    self.kwargs['max_tokens'] = first
+                    self.kwargs['max_completion_tokens'] = second
+                    with self.assertRaisesRegex(budget.ContextBudgetError, 'provider_contract_changed'):
+                        self.dispatch()
+                    self.assertEqual(self.agent._tp_context_model_calls, 0)
+
+    def test_v2_output_ceiling_is_combined_and_frozen_across_retry(self):
+        initial = {**admission(self.messages), 'contract': budget.CONTRACT_V2, 'completionTokens': 32768}
+        retried = {**initial, 'messagesSha256': budget.digest(self.messages + [{'role':'user','content':'repair'}])}
+        self.descriptor['initialAdmission'] = initial
+        self.body['tp_context_admission'] = initial
+        self.body['tp_context_budget'] = {'contract': budget.CONTRACT_V2, 'completionTokens': 32768}
+        self.count.stop()
+        with patch.object(budget, 'prepare_admission', side_effect=[initial, retried]), \
+             patch.object(budget, '_require_known_previous_attempt'), \
+             patch.object(budget, '_authorize_retry'):
+            self.dispatch()
+            self.assertEqual(self.kwargs['max_tokens'], 32768)
+            self.retry()
+            self.assertEqual(self.kwargs['max_tokens'], 32768)
+
+    def test_price_band_frozen_and_retry_crosses_only_after_approval(self):
+        self.descriptor['pricePolicyVersion'] = budget.BANDED_PRICE_POLICY
+        low = {**admission(self.messages), 'inputTokens':271999, 'inputBudget':320000, 'marginTokens':16000}
+        high = {**low, 'inputTokens':272000, 'messagesSha256':budget.digest(self.messages + [{'role':'user','content':'repair'}])}
+        self.descriptor['initialAdmission'] = low
+        self.count.stop()
+        with patch.object(budget, 'prepare_admission', side_effect=[low, high]), \
+             patch.object(budget, '_require_known_previous_attempt'), \
+             patch.object(budget, '_authorize_retry') as approve:
+            self.dispatch()
+            self.assertEqual(self.kwargs['extra_body']['provider']['max_price'], {'prompt':0.125,'completion':0.5})
+            self.retry()
+            approve.assert_called_once()
+            self.assertEqual(self.kwargs['extra_body']['provider']['max_price'], {'prompt':0.25,'completion':0.75})
+        self.assertEqual(budget.attempt_price_cap('openai/gpt-6-luna',272000,None), {'prompt':0.125,'completion':0.5})
+        self.assertEqual(budget.attempt_price_cap('openai/gpt-6-luna',271999,budget.BANDED_PRICE_POLICY), {'prompt':0.125,'completion':0.5})
+        self.assertEqual(budget.attempt_price_cap('openai/gpt-6-luna',272000,budget.BANDED_PRICE_POLICY), {'prompt':0.25,'completion':0.75})
+
+    def test_denied_retry_does_not_raise_provider_cap(self):
+        self.descriptor['pricePolicyVersion'] = budget.BANDED_PRICE_POLICY
+        low = {**admission(self.messages), 'inputTokens':271999, 'inputBudget':320000, 'marginTokens':16000}
+        high = {**low, 'inputTokens':272000, 'messagesSha256':budget.digest(self.messages + [{'role':'user','content':'repair'}])}
+        self.descriptor['initialAdmission'] = low
+        self.count.stop()
+        with patch.object(budget, 'prepare_admission', side_effect=[low, high]), \
+             patch.object(budget, '_require_known_previous_attempt'), \
+             patch.object(budget, '_authorize_retry', side_effect=budget.ContextBudgetError('denied')):
+            self.dispatch()
+            with self.assertRaisesRegex(budget.ContextBudgetError,'denied'): self.retry()
+            self.assertEqual(self.kwargs['extra_body']['provider']['max_price'], {'prompt':0.125,'completion':0.5})
+
     def test_first_has_no_callback_and_retries_receive_fresh_receipts(self):
         with patch.object(budget, '_authorize_retry') as authorize, patch.object(durable, 'get_request_view', side_effect=[self.view(), self.view(2)]):
             self.dispatch(); authorize.assert_not_called()
