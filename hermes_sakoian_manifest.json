@@ -1,0 +1,9 @@
+{
+  "schema_version": "tp-astro-analysis.hermes-context.v1",
+  "method_id": "sakoian_transit_analysis",
+  "task_type": "sakoian_transit_analysis",
+  "calculation_contract": "core.transit_snapshot",
+  "memory_scope": "conversation.sakoian_transit",
+  "mixing_policy": "forbidden",
+  "max_context_bytes": 180000
+}

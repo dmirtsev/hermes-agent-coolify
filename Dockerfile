@@ -34,6 +34,8 @@ COPY hermes_design_completion.py /opt/hermes/agent/design_completion.py
 COPY hermes_runtime_status.py /opt/hermes/agent/runtime_status_guard.py
 COPY hermes_versioned_methods.py /opt/hermes/agent/versioned_methods.py
 COPY hermes_sourced_text.py /opt/hermes/agent/sourced_text.py
+COPY hermes_analysis_context.py /opt/hermes/agent/sakoian_analysis_context.py
+COPY hermes_sakoian_manifest.json /opt/hermes/agent/sakoian_analysis_manifest.json
 COPY hermes_dialogue_models.py /opt/hermes/agent/dialogue_models.py
 COPY hermes_behavior_policy.py /opt/hermes/agent/behavior_policy.py
 COPY patch_hermes_behavior_policy.py /opt/hermes-wrapper/patch_hermes_behavior_policy.py
