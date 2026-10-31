@@ -132,3 +132,39 @@ def prepare_sakoian_analysis_context(value, *, expected_request_id=None):
         raise
     except (ValueError, TypeError, KeyError, AttributeError, OSError, RecursionError):
         raise SakoianContextError('Malformed Sakoian context or unavailable release manifest') from None
+
+
+def narrate_sakoian_once(agent, user_message, system_prompt):
+    """A bounded narration, not an agent loop: exactly one SDK/provider attempt."""
+    if agent.provider != 'openrouter' or agent.model != 'deepseek/deepseek-v4-flash':
+        raise SakoianContextError('Sakoian test narration requires the approved economy route')
+    try:
+        from agent.openrouter_accounting import record_openrouter_response, record_openrouter_unresolved_attempt
+    except ImportError:  # Local contract tests.
+        from hermes_openrouter_accounting import record_openrouter_response, record_openrouter_unresolved_attempt
+    client = agent._ensure_primary_openai_client(reason='sakoian_single_narration')
+    client = client.with_options(max_retries=0, timeout=90)
+    try:
+        response = client.chat.completions.create(
+            model=agent.model,
+            messages=[{'role':'system','content':system_prompt}, {'role':'user','content':user_message}],
+            max_tokens=4096, stream=False,
+            extra_headers={'X-OpenRouter-Metadata':'enabled'},
+            extra_body={'reasoning':{'enabled':False}, 'provider':{'allow_fallbacks':False}},
+        )
+    except Exception:
+        record_openrouter_unresolved_attempt(agent, 'sakoian_single_attempt_failed')
+        raise
+    record_openrouter_response(agent, response)
+    try:
+        choice = response.choices[0]
+        text = choice.message.content
+        complete = (len(response.choices)==1 and choice.finish_reason=='stop'
+                    and isinstance(text,str) and bool(text.strip())
+                    and not getattr(choice.message,'tool_calls',None))
+    except (AttributeError, IndexError, TypeError):
+        text = None; complete = False
+    return {'final_response':text if isinstance(text,str) else '',
+            'messages':[{'role':'assistant','content':text}] if isinstance(text,str) else [],
+            'api_calls':1, 'completed':complete, 'failed':not complete,
+            **({} if complete else {'error':'sakoian_narration_incomplete'})}

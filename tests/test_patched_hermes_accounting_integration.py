@@ -23,6 +23,31 @@ class PatchedHermesAccountingIntegrationTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         sys.path.insert(0, "/opt/hermes")
 
+    def test_sakoian_actual_execution_never_enters_continuation_loop(self):
+        from gateway.platforms.api_server import APIServerAdapter
+        for finish in ('stop', 'length'):
+            with self.subTest(finish=finish):
+                client = Mock(); client.with_options.return_value = client
+                client.chat.completions.create.return_value = SimpleNamespace(
+                    id='single-sakoian-fixture', model='deepseek/deepseek-v4-flash',
+                    usage=SimpleNamespace(prompt_tokens=10,completion_tokens=5,total_tokens=15),
+                    choices=[SimpleNamespace(finish_reason=finish,message=SimpleNamespace(content='bounded text',tool_calls=None))])
+                agent = SimpleNamespace(provider='openrouter',model='deepseek/deepseek-v4-flash',
+                    base_url='https://openrouter.ai/api/v1',
+                    _ensure_primary_openai_client=Mock(return_value=client),
+                    run_conversation=Mock(side_effect=AssertionError('agent loop must not run')))
+                adapter = object.__new__(APIServerAdapter)
+                adapter._create_agent = lambda **kwargs: agent
+                result, usage = asyncio.run(adapter._run_agent(user_message='one question',
+                    conversation_history=[],ephemeral_system_prompt='closed facts',
+                    strict_context_only=True,sakoian_single_call=True))
+                self.assertEqual(result['completed'],finish=='stop')
+                self.assertEqual(result['api_calls'],1)
+                self.assertEqual(client.chat.completions.create.call_count,1)
+                client.with_options.assert_called_once_with(max_retries=0,timeout=90)
+                self.assertEqual(client.chat.completions.create.call_args.kwargs['max_tokens'],4096)
+                agent.run_conversation.assert_not_called()
+
     def test_sakoian_context_rejects_mixed_context_before_agent(self) -> None:
         from gateway.platforms.api_server import APIServerAdapter
         from test_hermes_analysis_context import fixture, install_test_manifest
@@ -71,6 +96,7 @@ class PatchedHermesAccountingIntegrationTests(unittest.TestCase):
         call = adapter._run_agent.await_args.kwargs
         self.assertEqual(call["conversation_history"], [])
         self.assertTrue(call["strict_context_only"])
+        self.assertTrue(call["sakoian_single_call"])
         self.assertTrue(call["session_id"].startswith("tp-sakoian-"))
         self.assertEqual(response.headers["X-Hermes-Context-Isolation"], "strict-v1")
         self.assertEqual(json.loads(response.text)["tp_analysis_execution"]["analysis_hash"], fixture()["analysis_hash"])

@@ -674,6 +674,7 @@ from agent.versioned_methods import (
 from agent.sakoian_analysis_context import (
     SakoianContextError,
     prepare_sakoian_analysis_context,
+    narrate_sakoian_once,
 )
 
 logger = logging.getLogger(__name__)
@@ -1446,5 +1447,34 @@ replace_once(
         if versioned_method_guard is not None:
             response_data["tp_method_execution"] = versioned_method_guard.receipt''',
     "Sakoian execution receipt",
+)
+replace_once(
+    API_SERVER,
+    '        accounting_request_key: Optional[str] = None,\n',
+    '        sakoian_single_call: bool = False,\n        accounting_request_key: Optional[str] = None,\n',
+    "Sakoian bounded narration argument",
+)
+replace_once(
+    API_SERVER,
+    '                accounting_request_key=idempotency_key,\n',
+    '                sakoian_single_call=sakoian_analysis_guard is not None,\n                accounting_request_key=idempotency_key,\n',
+    "Sakoian bounded narration selection",
+)
+replace_once(
+    API_SERVER,
+    """                result = agent.run_conversation(
+                    user_message=user_message,
+                    conversation_history=conversation_history,
+                    task_id=effective_task_id,
+                )""",
+    """                if sakoian_single_call:
+                    result = narrate_sakoian_once(agent, user_message, ephemeral_system_prompt)
+                else:
+                    result = agent.run_conversation(
+                        user_message=user_message,
+                        conversation_history=conversation_history,
+                        task_id=effective_task_id,
+                    )""",
+    "Sakoian one provider call without automatic continuation",
 )
 print("patched pinned Hermes OpenRouter accounting and Sakoian seams")

@@ -20,3 +20,9 @@ Only five groups of one selected transit are in scope, not the full book.
 This candidate starts from verified production 658a105 and explicitly preserves
 already installed test 7557cf6c (periods/context budgets and accounting).
 Production is not a delivery target. No credential or model configuration changes.
+
+The live check exposed Hermes automatic continuation after token exhaustion.
+Sakoian now uses one direct SDK call inside the existing durable accounting
+scope: SDK retries disabled, fixed approved economy model, max_tokens=4096,
+reasoning disabled, no provider fallback. A length/empty/tool response fails
+closed; it is never silently continued. Other Hermes routes are unchanged.
