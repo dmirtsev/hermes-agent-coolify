@@ -1,0 +1,42 @@
+{
+  "openai/gpt-6-luna": {
+    "route": "openrouter:openai:gpt-6-luna:high:json-or-text-v1",
+    "counter": "tiktoken:o200k_base",
+    "counterRevision": "tiktoken0.14.0:regex2026.9.29:two-text-messages-v1:text-2-or-3:calibration20261027",
+    "contextWindow": 1050000,
+    "accuracy": "calibrated",
+    "framingUpperCorrection": 0,
+    "evidenceSha256": "69bee62201ff962eeee2c5c99441fb3593a0ce4bad09a1e2f815fd0d3e7424e1",
+    "evidenceFile": "context_budget_calibration_20261027.json"
+  },
+  "deepseek/deepseek-v4-flash": {
+    "route": "openrouter:deepinfra-fp8,gmicloud-fp8:deepseek-v4-flash:high:json-or-text-v1",
+    "counter": "deepseek-v4-reference",
+    "counterRevision": "60d8d70770c6776ff598c94bb586a859a38244f1:text-2-or-3:calibration20261027",
+    "contextWindow": 1048576,
+    "accuracy": "calibrated",
+    "framingUpperCorrection": 128,
+    "evidenceSha256": "69bee62201ff962eeee2c5c99441fb3593a0ce4bad09a1e2f815fd0d3e7424e1",
+    "evidenceFile": "context_budget_calibration_20261027.json"
+  },
+  "openai/gpt-6.1-terra": {
+    "route": "openrouter:openai:gpt-6.1-terra:medium:json-or-text-v1",
+    "counter": "tiktoken:o200k_base",
+    "counterRevision": "tiktoken0.14.0:regex2026.9.29:text-2-or-3:calibration20261028-terra",
+    "contextWindow": 1050000,
+    "accuracy": "calibrated",
+    "framingUpperCorrection": 0,
+    "evidenceSha256": "872161e5361c325dc2334dc92d3df68edef39685469079097c462f2cc976b98d",
+    "evidenceFile": "context_budget_calibration_terra_20261028.json"
+  },
+  "deepseek/deepseek-v4.1-flash": {
+    "route": "openrouter:deepinfra-fp8:deepseek-v4.1-flash:high:json-or-text-v1",
+    "counter": "deepseek-v4.1-official-reference",
+    "counterRevision": "13231c592e958fb39e2af6001dae69d90e7a36b265702b9b390236fb387599e2:c90dfa01249db1be4245780a052ede752e1361c612ac6d08e2bdada7d599476b:calibration20261030",
+    "contextWindow": 1048576,
+    "accuracy": "calibrated",
+    "framingUpperCorrection": 128,
+    "evidenceSha256": "826e59aae35de857e8f455d835c6bae594623ec44faea4e3a5d2e64818a0d540",
+    "evidenceFile": "context_budget_calibration_v41_20261030.json"
+  }
+}

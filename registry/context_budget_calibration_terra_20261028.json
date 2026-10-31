@@ -1,0 +1,147 @@
+{
+  "version": 1,
+  "date": "2026-10-28",
+  "model": "openai/gpt-6.1-terra",
+  "provider": "OpenAI",
+  "reasoningEffort": "medium",
+  "providerFallback": false,
+  "scope": "Two text messages (system,user), or three for repair (system,user,user), JSON object or text; no tools/images. Conservative calibrated upper bound, not an official provider tokenizer.",
+  "counter": "tiktoken0.14.0:o200k_base",
+  "formula": "3 + sum(3 + encode(role) + encode(content))",
+  "observedDeltas": [
+    -1
+  ],
+  "framingUpperCorrection": 0,
+  "newSyntheticCalls": 2,
+  "newCostUsd": 0.00033,
+  "approvedCeilingUsd": 0.02,
+  "cases": [
+    {
+      "periodDays": 3,
+      "referenceTokens": 55115,
+      "providerInputTokens": 55114,
+      "delta": -1,
+      "requestSha256": "4d4b48724dbde8d83b0ac4c4174f2007ada582b184da180c4712506c2420791c",
+      "messagesSha256": "9d9d4f76e5175c5451407f19b88212f1e7d9c91d6e98978d7f2397c2f2f89376",
+      "model": "openai/gpt-6.1-terra",
+      "provider": {
+        "only": [
+          "openai"
+        ],
+        "allow_fallbacks": false,
+        "require_parameters": true,
+        "max_price": {
+          "prompt": 2.5,
+          "completion": 7.5
+        }
+      },
+      "reasoning": {
+        "effort": "medium"
+      },
+      "messages": 2,
+      "responseFormat": null
+    },
+    {
+      "periodDays": 90,
+      "referenceTokens": 154778,
+      "providerInputTokens": 154777,
+      "delta": -1,
+      "requestSha256": "8dd69983d15c5b363dcd3894c2e5b590771238025ec523c0131f6f5c20250254",
+      "messagesSha256": "3e4712c6af7b3d58ed8b7307ea7665f2166e6db7f372d943bb6bab85255ec1d8",
+      "model": "openai/gpt-6.1-terra",
+      "provider": {
+        "only": [
+          "openai"
+        ],
+        "allow_fallbacks": false,
+        "require_parameters": true,
+        "max_price": {
+          "prompt": 2.5,
+          "completion": 7.5
+        }
+      },
+      "reasoning": {
+        "effort": "medium"
+      },
+      "messages": 2,
+      "responseFormat": null
+    },
+    {
+      "case": "json",
+      "httpStatus": 200,
+      "seconds": 2.91,
+      "model": "openai/gpt-6.1-terra",
+      "modelReturned": "openai/gpt-6.1-terra",
+      "provider": "OpenAI",
+      "generationId": "gen-1793210913-JHrLPRfp1SA56bvyePh2",
+      "requestSha256": "05e472ea15ccbd87f6f994e53a1cedafdf9c11bf1dff4112baa822bfbb145079",
+      "messagesSha256": "107a5438d61fa58da45ddeef5d0ce1cff97785356184a5fc6f50af73968a2d1e",
+      "referenceTokens": 93,
+      "providerInputTokens": 92,
+      "providerOutputTokens": 12,
+      "delta": -1,
+      "costUsd": 0.000152,
+      "finishReason": "stop",
+      "maxTokens": 128,
+      "responseFormat": {
+        "type": "json_object"
+      },
+      "reasoningEffort": "medium",
+      "providerRoute": {
+        "only": [
+          "openai"
+        ],
+        "allow_fallbacks": false,
+        "require_parameters": true,
+        "max_price": {
+          "prompt": 2.5,
+          "completion": 7.5
+        }
+      },
+      "syntheticOnly": true,
+      "tiktokenVersion": "0.14.0"
+    },
+    {
+      "case": "json-repair",
+      "httpStatus": 200,
+      "seconds": 1.256,
+      "model": "openai/gpt-6.1-terra",
+      "modelReturned": "openai/gpt-6.1-terra",
+      "provider": "OpenAI",
+      "generationId": "gen-1793210916-7WaquWCtd0UOQOvfWNE1",
+      "requestSha256": "412557919daaff4603e6811cb4056e7746a3ce35f97831fb0e1c34fd12974353",
+      "messagesSha256": "aecf61355a9380f0d977ad08f2d3aea97abe3fc2ea34a69cab55751e50bab6f9",
+      "referenceTokens": 119,
+      "providerInputTokens": 118,
+      "providerOutputTokens": 12,
+      "delta": -1,
+      "costUsd": 0.000178,
+      "finishReason": "stop",
+      "maxTokens": 128,
+      "responseFormat": {
+        "type": "json_object"
+      },
+      "reasoningEffort": "medium",
+      "providerRoute": {
+        "only": [
+          "openai"
+        ],
+        "allow_fallbacks": false,
+        "require_parameters": true,
+        "max_price": {
+          "prompt": 2.5,
+          "completion": 7.5
+        }
+      },
+      "syntheticOnly": true,
+      "tiktokenVersion": "0.14.0"
+    }
+  ],
+  "priorMetricsSha256": "cd1eb16f2b1380275af2f07ce1065462ca654aaed68ab4d52f10b048f963034c",
+  "limitations": [
+    "Two large text cases reuse previously obtained provider counts. No personal content is included in this evidence.",
+    "JSON and repair framing calibrated on short synthetic data with max_tokens=128; product output reserve remains8192. Output cap is not part of input framing.",
+    "The previously measured154777-token request is outside product128000 budget; it is counter evidence, not an admitted product request.",
+    "Recalibrate after a provider/model/tokenizer or message-shape change. Native quality, recovery and billing acceptance are separate."
+  ]
+}
