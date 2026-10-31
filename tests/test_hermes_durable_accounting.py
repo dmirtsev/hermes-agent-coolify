@@ -125,6 +125,38 @@ class DurableAccountingTests(unittest.TestCase):
             durable.begin_request(key,digest);durable.complete_request(key,digest,{**base,**override},{"total_tokens":1})
             self.assertNotIn("terminal_outcome",durable.get_request_view(key))
 
+    def test_reserve_platform_terminal_requires_generation_and_no_unresolved(self):
+        for code in ("hermes_attempt_reserve_denied", "hermes_attempt_reserve_unavailable"):
+            for evidence in ("known", "missing", "unresolved", "unknown_cost"):
+                key=f"{code}-{evidence}"; digest=_payload(key)
+                durable.begin_request(key,digest)
+                if evidence != "missing":
+                    generation=_pending_generation(key)
+                    if evidence != "unknown_cost": generation["_actual_cost"] = Decimal("0.00001")
+                    durable.record_generation_evidence(generation, "configured/model", request_key=key)
+                if evidence == "unresolved":
+                    durable.record_unresolved_evidence("provider_attempt_failed", "configured/model", request_key=key)
+                durable.complete_request(key,digest,{"failed":True,"completed":False,"final_response":"", "error":code}, {})
+                outcome=durable.get_request_view(key).get("terminal_outcome")
+                self.assertEqual(outcome, {"code":code,"answer_available":False} if evidence == "known" else None)
+        key="insufficient-not-platform";digest=_payload(key);durable.begin_request(key,digest)
+        durable.record_generation_evidence(_pending_generation(key), "configured/model", request_key=key)
+        durable.complete_request(key,digest,{"failed":True,"completed":False,"final_response":"", "error":"hermes_attempt_reserve_insufficient"}, {})
+        self.assertNotIn("terminal_outcome",durable.get_request_view(key))
+
+    def test_ambiguous_reservation_terminal_is_diagnostic_only_even_with_unresolved_attempt(self):
+        for code in ("hermes_attempt_reserve_previous_attempt_unknown",
+                     "hermes_attempt_reserve_accounting_unavailable", "hermes_attempt_reserve_invalid"):
+            key=code;digest=_payload(key);durable.begin_request(key,digest)
+            durable.record_unresolved_evidence("provider_attempt_failed", "configured/model", request_key=key)
+            durable.complete_request(key,digest,{"failed":True,"completed":False,"final_response":"", "error":code}, {})
+            view=durable.get_request_view(key)
+            self.assertTrue(view["evidence"]["has_unresolved_attempt"])
+            self.assertEqual(view["terminal_outcome"], {"code":code,"answer_available":False,"dispatch_state":"unknown"})
+        key="ambiguous-raw-object";digest=_payload(key);durable.begin_request(key,digest)
+        durable.complete_request(key,digest,{"failed":True,"completed":False,"final_response":"", "error":{}}, {})
+        self.assertNotIn("terminal_outcome",durable.get_request_view(key))
+
     def test_same_key_in_flight_and_different_payload_are_blocked(self):
         digest = _payload("one")
         durable.begin_request("cabinet-2", digest)

@@ -90,9 +90,8 @@ replace(api,
 replace(api,
     '            err_body["error"]["hermes"] = {\n                "completed": completed,\n',
     '            reserve_error = result.get("error")\n'
-    '            if isinstance(reserve_error, str) and reserve_error.startswith("hermes_attempt_reserve_"):\n'
-    '                err_body["error"]["code"] = ("hermes_attempt_reserve_denied"\n'
-    '                    if reserve_error == "hermes_attempt_reserve_denied" else "hermes_attempt_reserve_unavailable")\n'
+    '            if reserve_error in ("hermes_attempt_reserve_insufficient", "hermes_attempt_reserve_denied", "hermes_attempt_reserve_unavailable", "hermes_attempt_reserve_previous_attempt_unknown", "hermes_attempt_reserve_accounting_unavailable", "hermes_attempt_reserve_invalid"):\n'
+    '                err_body["error"]["code"] = reserve_error\n'
     '            err_body["error"]["hermes"] = {\n                "completed": completed,\n',
     "surface safe reservation failure with actual accounting")
 loop = root / "agent/conversation_loop.py"
@@ -105,7 +104,7 @@ replace(loop,
 replace(loop,
     'from agent.usage_pricing import estimate_usage_cost, normalize_usage\n',
     'from agent.usage_pricing import estimate_usage_cost, normalize_usage\n'
-    'from agent.context_budget import ContextBudgetError, admit_provider_call, readable_managed_part, managed_completion_action\n', "provider guard import")
+    'from agent.context_budget import ContextBudgetError, admit_provider_call, readable_managed_part, managed_completion_action, _log_managed_attempt\n', "provider guard import")
 replace(loop,
     '                    _accounting_attempt_dispatched = True\n',
     '                    admit_provider_call(agent, next_api_kwargs)\n'
@@ -114,8 +113,11 @@ replace(loop,
     '            except Exception as api_error:\n                if _accounting_attempt_dispatched and not _accounting_response_recorded:\n',
     '            except Exception as api_error:\n'
     '                if isinstance(api_error, ContextBudgetError):\n'
+    '                    _log_managed_attempt(agent, "admission_rejected")\n'
     '                    return {"final_response": "", "messages": messages, "api_calls": api_call_count,\n'
     '                            "completed": False, "failed": True, "error": str(api_error)}\n'
+    '                if _accounting_attempt_dispatched:\n'
+    '                    _log_managed_attempt(agent, "provider_error")\n'
     '                if _accounting_attempt_dispatched and not _accounting_response_recorded:\n',
     "admission failures stop immediately without hidden retries")
 replace(loop,

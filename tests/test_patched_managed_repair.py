@@ -1,10 +1,12 @@
 """Actual pinned agent loop and accounting; no external provider calls."""
 import asyncio
 import copy
+import io
 import json
 import os
 import sys
 import unittest
+import urllib.error
 import uuid
 from pathlib import Path
 from types import SimpleNamespace
@@ -19,7 +21,7 @@ class PatchedManagedRepairTests(unittest.TestCase):
     def setUpClass(cls):
         sys.path.insert(0, '/opt/hermes')
 
-    def run_loop(self, candidates, *, overflow=False, validator_failure=False, reserve=None, completion=8192):
+    def run_loop(self, candidates, *, overflow=False, validator_failure=False, reserve=None, completion=8192, medium=False):
         from gateway.platforms.api_server import APIServerAdapter
         from run_agent import AIAgent
         supplied = body(True)
@@ -28,6 +30,8 @@ class PatchedManagedRepairTests(unittest.TestCase):
             tp_context_budget={'contract':'hermes-context-budget-v1','profile':'natal_transit','inputBudget':128000})
         if completion == 32768:
             supplied['tp_context_budget'] = {'contract':'hermes-context-budget-v2','profile':'natal_transit', 'inputBudget':320000, 'completionTokens':32768}
+        if medium:
+            supplied['tp_reasoning_profile']='hermes-reasoning-medium-v1'
         request_key = None
         def admission_receipt(messages):
             from agent.context_budget import digest
@@ -98,6 +102,10 @@ class PatchedManagedRepairTests(unittest.TestCase):
             data=json.loads(request.data)
             reserve['receipts'].append((data['attempt'],copy.deepcopy(data['admission'])))
             if reserve['outcome']=='unavailable': raise TimeoutError()
+            if reserve['outcome'] in ('denied','insufficient'):
+                status=409 if reserve['outcome']=='denied' else 402
+                code='hermes_attempt_reserve_'+reserve['outcome']
+                raise urllib.error.HTTPError('https://test.invalid',status,'',{},io.BytesIO(json.dumps({'error':code}).encode()))
             return CallbackResponse(request)
         with patch('agent.context_budget.urllib.request.build_opener',return_value=SimpleNamespace(open=callback)), patch('agent.conversation_loop.admit_provider_call',side_effect=capture_guard), patch('agent.context_budget.prepare_admission',side_effect=admission), patch.dict(os.environ,{
                 'HERMES_RUNTIME_TIER':'economy','HERMES_RUNTIME_ID':'synthetic-managed-test'}):
@@ -118,7 +126,7 @@ class PatchedManagedRepairTests(unittest.TestCase):
 
     def test_reservation_gate_in_real_loop_preserves_accounting_and_context(self):
         bad=reply('{{s2}} Повторное прохождение утром.')
-        for outcome in ('approved','denied','unavailable'):
+        for outcome in ('approved','denied','unavailable','insufficient'):
             with self.subTest(outcome=outcome):
                 reserve={'outcome':outcome,'receipts':[]}
                 result,usage,calls,_,original=self.run_loop([(bad,'stop'),(reply(),'stop')],reserve=reserve)
@@ -136,6 +144,17 @@ class PatchedManagedRepairTests(unittest.TestCase):
                     self.assertEqual(result['error'],'hermes_attempt_reserve_'+outcome)
                 accounting=usage['_hermes_openrouter_accounting']
                 self.assertEqual(accounting['cost']['amount_micro_usd'],len(calls)*10)
+
+    def test_medium_opt_in_is_frozen_through_real_repair_loop(self):
+        bad=reply('{{s2}} Повторное прохождение утром.')
+        result,usage,calls,_,original=self.run_loop([(bad,'stop'),(reply(),'stop')],
+            reserve={'outcome':'approved','receipts':[]},completion=32768,medium=True)
+        self.assertEqual(len(calls),2)
+        self.assertEqual(calls[0]['messages'],original['messages'])
+        for call in calls:
+            self.assertEqual(call['extra_body']['reasoning']['effort'],'medium')
+            self.assertEqual(call.get('max_tokens',call.get('max_completion_tokens')),32768)
+        self.assertEqual(usage['_hermes_openrouter_accounting']['cost']['amount_micro_usd'],20)
 
     def test_full_output_and_funded_price_band_in_pinned_loop(self):
         bad=reply('{{s2}} Повторное прохождение утром.')
@@ -160,7 +179,7 @@ class PatchedManagedRepairTests(unittest.TestCase):
 
     def test_reservation_failure_response_keeps_actual_charge(self):
         from gateway.platforms.api_server import APIServerAdapter
-        for outcome in ('denied','unavailable'):
+        for outcome in ('denied','unavailable','insufficient'):
             with self.subTest(outcome=outcome):
                 result,usage,calls,_,_=self.run_loop(
                     [(reply('{{s2}} Повторное прохождение утром.'),'stop')],
@@ -177,6 +196,34 @@ class PatchedManagedRepairTests(unittest.TestCase):
                 self.assertEqual(payload['error']['code'],'hermes_attempt_reserve_'+outcome)
                 self.assertEqual(payload['hermes_accounting']['cost']['amount_micro_usd'],10)
                 self.assertEqual(len(calls),1)
+                replay=asyncio.run(adapter._handle_chat_completions(Request()))
+                self.assertEqual(replay.status,response.status)
+                self.assertEqual(replay.headers.get('X-Hermes-Idempotency-Replayed'),'true')
+                self.assertEqual(json.loads(replay.text)['error']['code'],'hermes_attempt_reserve_'+outcome)
+                adapter._run_agent.assert_awaited_once()
+
+    def test_unknown_reservation_errors_are_not_relabelled_and_replay_without_provider(self):
+        from gateway.platforms.api_server import APIServerAdapter
+        result,usage,calls,_,_=self.run_loop(
+            [(reply('{{s2}} Повторное прохождение утром.'),'stop')],
+            reserve={'outcome':'denied','receipts':[]})
+        for code in ('hermes_attempt_reserve_previous_attempt_unknown',
+                     'hermes_attempt_reserve_accounting_unavailable', 'hermes_attempt_reserve_invalid'):
+            with self.subTest(code=code):
+                adapter=object.__new__(APIServerAdapter)
+                adapter._api_key='';adapter._model_name='hermes-agent';adapter._check_auth=lambda request:None
+                adapter._run_agent=AsyncMock(return_value=({**result,'error':code},usage))
+                key='reserve-unknown-response-'+uuid.uuid4().hex
+                class Request:
+                    headers={'Idempotency-Key':key}
+                    async def json(self): return {'model':'caller/model','messages':[{'role':'user','content':'same'}],'stream':False}
+                response=asyncio.run(adapter._handle_chat_completions(Request()))
+                self.assertEqual(json.loads(response.text)['error']['code'],code)
+                replay=asyncio.run(adapter._handle_chat_completions(Request()))
+                self.assertEqual(json.loads(replay.text)['error']['code'],code)
+                self.assertEqual(replay.headers.get('X-Hermes-Idempotency-Replayed'),'true')
+                adapter._run_agent.assert_awaited_once()
+        self.assertEqual(len(calls),1)
 
     def test_normal_and_length_bad_draft_repair_with_full_original_context(self):
         bad=reply('{{s2}}. Повторное прохождение: ретроградный Меркурий утром.')
