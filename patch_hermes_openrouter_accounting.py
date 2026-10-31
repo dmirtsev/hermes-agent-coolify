@@ -661,6 +661,7 @@ from agent.durable_accounting import (
     internal_authorized as durable_internal_authorized,
     reconcile_request as durable_reconcile_request,
     request_payload_sha256 as durable_payload_sha256,
+    legacy_request_payload_sha256 as durable_legacy_payload_sha256,
     seal_not_dispatched as durable_seal_not_dispatched,
 )
 from agent.design_completion import handle_design_completion
@@ -938,9 +939,16 @@ replace_once(
             return auth_error
         try:
             body = await request.json()
-            payload_sha256 = body.get("payload_sha256") if isinstance(body, dict) else None
+            payload = body.get("payload") if isinstance(body, dict) else None
+            if isinstance(payload, dict):
+                payload_sha256 = durable_payload_sha256(payload)
+                legacy_payload_sha256 = durable_legacy_payload_sha256(payload)
+            else:
+                payload_sha256 = body.get("payload_sha256") if isinstance(body, dict) else None
+                legacy_payload_sha256 = None
             value = durable_seal_not_dispatched(
-                request.match_info["request_key"], payload_sha256
+                request.match_info["request_key"], payload_sha256,
+                legacy_payload_sha256=legacy_payload_sha256,
             )
             return web.json_response(value)
         except DurableRequestKeyError:
@@ -1016,7 +1024,10 @@ replace_once(
         if idempotency_key:
             payload_sha256 = durable_payload_sha256(body)
             try:
-                decision = durable_begin_request(idempotency_key, payload_sha256)
+                decision = durable_begin_request(
+                    idempotency_key, payload_sha256,
+                    legacy_payload_sha256=durable_legacy_payload_sha256(body),
+                )
             except DurableRequestKeyError:
                 return web.json_response(
                     _openai_error("Invalid Idempotency-Key", code="invalid_idempotency_key"),
@@ -1437,4 +1448,3 @@ replace_once(
     "Sakoian execution receipt",
 )
 print("patched pinned Hermes OpenRouter accounting and Sakoian seams")
-

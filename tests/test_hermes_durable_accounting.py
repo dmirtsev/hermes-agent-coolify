@@ -102,6 +102,29 @@ class DurableAccountingTests(unittest.TestCase):
                 "cabinet-1", digest, {"final_response": "changed"}, usage
             )
 
+    def test_safe_view_reports_only_verified_managed_terminal_failures(self):
+        for index, code in enumerate(("managed_transit_validation_exhausted", "managed_transit_validation_unavailable")):
+            key=f"managed-terminal-{index}"; digest=_payload(key)
+            durable.begin_request(key,digest)
+            durable.record_generation_evidence(_pending_generation(f"gen-{index}"), "configured/model", request_key=key)
+            durable.complete_request(key,digest,{"failed":True,"completed":False,"final_response":"", "error":code,
+                "messages":[{"content":"private text"}], "chain":"private chain"}, {"total_tokens":1})
+            view=durable.get_request_view(key)
+            self.assertEqual(view["state"],"completed")
+            self.assertEqual(view["terminal_outcome"],{"code":code,"answer_available":False})
+            self.assertNotIn("private text",str(view));self.assertNotIn("private chain",str(view))
+            self.assertIn("accounting",view)
+            self.assertEqual(view["evidence"]["generation_ids"],[f"gen-{index}"])
+            self.assertEqual(view["accounting"]["model_execution"]["upstream_generation_ids"],[f"gen-{index}"])
+
+    def test_safe_view_does_not_infer_terminal_outcome_from_partial_or_other_results(self):
+        base={"failed":True,"completed":False,"final_response":"", "error":"managed_transit_validation_exhausted"}
+        for index, override in enumerate(({"failed":False},{"completed":True},{"final_response":"answer"},
+                {"error":"other_error"},{"completed":None},{"final_response":None},{"error":None})):
+            key=f"not-managed-terminal-{index}";digest=_payload(key)
+            durable.begin_request(key,digest);durable.complete_request(key,digest,{**base,**override},{"total_tokens":1})
+            self.assertNotIn("terminal_outcome",durable.get_request_view(key))
+
     def test_same_key_in_flight_and_different_payload_are_blocked(self):
         digest = _payload("one")
         durable.begin_request("cabinet-2", digest)
@@ -119,6 +142,45 @@ class DurableAccountingTests(unittest.TestCase):
         updated = {**old, "response_format": {"type": "json_object"}}
         with self.assertRaises(durable.RequestConflictError):
             durable.begin_request("frozen-format", durable.request_payload_sha256(updated))
+
+    def test_canonical_hash_contract_is_stable_for_unicode_and_numbers(self):
+        payload = {"z": "ёлка", "a": [1.0, -0.0, 1e-7, {"é": "ok"}]}
+        self.assertEqual(
+            durable.canonical_request_payload(payload),
+            '{"a":[1,0,1e-7,{"é":"ok"}],"z":"ёлка"}',
+        )
+        self.assertEqual(
+            durable.request_payload_sha256(payload),
+            "abcea386650cd2d640c0f3da14be6ee91051d9998da6485cc7f2480bb7025d80",
+        )
+
+    def test_legacy_payload_is_checked_by_gateway_and_replays_exactly(self):
+        payload = {"model": "test/model", "messages": ["x"], "fraction": 1e-6}
+        legacy = durable.legacy_request_payload_sha256(payload)
+        current = durable.request_payload_sha256(payload)
+        self.assertNotEqual(legacy, current)
+        durable.begin_request("old-request", legacy)
+        self.assertFalse(durable.is_exact_completed_request("old-request", payload))
+        durable.complete_request("old-request", legacy, {"final_response": "saved"}, {"total_tokens": 1})
+        self.assertTrue(durable.is_exact_completed_request("old-request", payload))
+        self.assertFalse(durable.is_exact_completed_request("old-request", {**payload, "model": "different"}))
+        self.assertFalse(durable.is_exact_completed_request("missing", payload))
+        view = durable.seal_not_dispatched("old-request", current, legacy_payload_sha256=legacy)
+        self.assertEqual(view["state"], "completed")
+        replay = durable.begin_request("old-request", current, legacy_payload_sha256=legacy)
+        self.assertEqual(replay["result"]["final_response"], "saved")
+        changed = {**payload, "model": "different"}
+        with self.assertRaises(durable.RequestConflictError):
+            durable.seal_not_dispatched("old-request", durable.request_payload_sha256(changed),
+                legacy_payload_sha256=durable.legacy_request_payload_sha256(changed))
+        with self.assertRaises(durable.RequestConflictError):
+            durable.begin_request("old-request", durable.request_payload_sha256(changed),
+                legacy_payload_sha256=durable.legacy_request_payload_sha256(changed))
+
+    def test_ecmascript_unicode_and_number_vectors(self):
+        payload = {"\ue000": 1e-6, "😀": [1e-7, 1e20, 1e21, -0.0, 9007199254740993]}
+        self.assertEqual(durable.canonical_request_payload(payload),
+            '{"😀":[1e-7,100000000000000000000,1e+21,0,9007199254740992],"\ue000":0.000001}')
 
     def test_failed_execution_is_fail_closed_on_retry(self):
         digest = _payload("failure")

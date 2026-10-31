@@ -113,13 +113,70 @@ def normalize_request_key(value: Any) -> str:
     return value
 
 
+HERMES_CANONICAL_JSON_CONTRACT = "hermes-json-c14n-v1"
+
+
+def _canonical_number(value: int | float) -> str:
+    """ECMAScript-style shortest decimal for an IEEE-754 JSON number."""
+    import math
+    number = float(value)
+    if not math.isfinite(number):
+        raise ValueError("non-finite JSON number")
+    if number == 0:
+        return "0"
+    sign = "-" if number < 0 else ""
+    text = repr(abs(number)).lower()
+    mantissa, _, exponent_text = text.partition("e")
+    exponent = int(exponent_text or "0")
+    before, dot, after = mantissa.partition(".")
+    digits = (before + after).lstrip("0")
+    decimal_point = len(before) + exponent
+    leading = len(before + after) - len((before + after).lstrip("0"))
+    decimal_point -= leading
+    digits = digits.rstrip("0") or "0"
+    if -6 < decimal_point <= 21:
+        if decimal_point <= 0:
+            return sign + "0." + "0" * (-decimal_point) + digits
+        if decimal_point >= len(digits):
+            return sign + digits + "0" * (decimal_point - len(digits))
+        return sign + digits[:decimal_point] + "." + digits[decimal_point:]
+    fraction = ("." + digits[1:]) if len(digits) > 1 else ""
+    power = decimal_point - 1
+    return sign + digits[0] + fraction + "e" + ("+" if power >= 0 else "-") + str(abs(power))
+
+
+def _canonical_string(value: str) -> str:
+    encoded = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+    # JSON.stringify escapes unpaired UTF-16 surrogate code units.
+    return "".join("\\u%04x" % ord(c) if 0xD800 <= ord(c) <= 0xDFFF else c for c in encoded)
+
+
+def canonical_request_payload(value: Any) -> str:
+    if value is None:
+        return "null"
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return _canonical_number(value)
+    if isinstance(value, str):
+        return _canonical_string(value)
+    if isinstance(value, list):
+        return "[" + ",".join(canonical_request_payload(v) for v in value) + "]"
+    if isinstance(value, dict) and all(isinstance(k, str) for k in value):
+        keys = sorted(value, key=lambda k: k.encode("utf-16-be", "surrogatepass"))
+        return "{" + ",".join(_canonical_string(k) + ":" + canonical_request_payload(value[k]) for k in keys) + "}"
+    raise ValueError("non-JSON value")
+
+
+def legacy_request_payload_sha256(payload: Any) -> str:
+    """Digest used by the deployed gateway before the canonical contract."""
+    encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True,
+                         separators=(",", ":"), allow_nan=False).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
 def request_payload_sha256(payload: Any) -> str:
-    encoded = json.dumps(
-        payload,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    ).encode("utf-8")
+    encoded = canonical_request_payload(payload).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
 
 
@@ -315,7 +372,7 @@ def _resolve_request_key(request_key: str | None) -> str | None:
     return current_request_key()
 
 
-def begin_request(request_key: str, payload_sha256: str) -> dict[str, Any]:
+def begin_request(request_key: str, payload_sha256: str, *, legacy_payload_sha256: str | None = None) -> dict[str, Any]:
     request_key = normalize_request_key(request_key)
     if not isinstance(payload_sha256, str) or len(payload_sha256) != 64:
         raise JournalError("invalid_payload_sha256")
@@ -336,7 +393,7 @@ def begin_request(request_key: str, payload_sha256: str) -> dict[str, Any]:
             )
             connection.commit()
             return {"state": "claimed", "requestKey": request_key}
-        if row["payload_sha256"] != payload_sha256:
+        if row["payload_sha256"] not in (payload_sha256, legacy_payload_sha256):
             connection.rollback()
             raise RequestConflictError("idempotency_payload_conflict")
         state = row["state"]
@@ -367,6 +424,21 @@ def begin_request(request_key: str, payload_sha256: str) -> dict[str, Any]:
                 return {"state": "failed", "requestKey": request_key, "result": result, "usage": usage}
             raise RequestUnresolvedError(row["failure_code"] or "request_unresolved")
         raise RequestInFlightError("request_in_flight")
+
+
+def is_exact_completed_request(request_key: str | None, payload: Any) -> bool:
+    """Read-only replay admission: never permits an undispatched provider call."""
+    if request_key is None:
+        return False
+    request_key = normalize_request_key(request_key)
+    current = request_payload_sha256(payload)
+    legacy = legacy_request_payload_sha256(payload)
+    with contextlib.closing(_connect()) as connection:
+        row = connection.execute(
+            "SELECT payload_sha256, state FROM accounting_request WHERE request_key = ?",
+            (request_key,),
+        ).fetchone()
+    return bool(row and row["state"] == "completed" and row["payload_sha256"] in (current, legacy))
 
 
 def record_request_accounting(
@@ -655,7 +727,7 @@ def fail_request(request_key: str, payload_sha256: str, reason: str) -> None:
         )
 
 
-def seal_not_dispatched(request_key: str, payload_sha256: str) -> dict[str, Any]:
+def seal_not_dispatched(request_key: str, payload_sha256: str, *, legacy_payload_sha256: str | None = None) -> dict[str, Any]:
     """Atomically fence a request key only when Hermes never received it.
 
     The same SQLite write lock also protects ``begin_request``. Whichever
@@ -683,7 +755,7 @@ def seal_not_dispatched(request_key: str, payload_sha256: str) -> dict[str, Any]
                 """,
                 (request_key, payload_sha256, SEALED_NOT_DISPATCHED, now, now),
             )
-        elif row["payload_sha256"] != payload_sha256:
+        elif row["payload_sha256"] not in (payload_sha256, legacy_payload_sha256):
             connection.rollback()
             raise RequestConflictError("idempotency_payload_conflict")
         connection.commit()
@@ -1058,6 +1130,19 @@ def _safe_request_view(request_key: str, *, include_events: bool = True) -> dict
         },
         "accounting": accounting,
     }
+    # Only expose a narrow, non-sensitive conclusion. Keep the result text,
+    # messages and validator feedback private, and never infer provider cost.
+    managed_failures = {"managed_transit_validation_exhausted", "managed_transit_validation_unavailable"}
+    if (row["state"] == "completed" and isinstance(stored_result, dict)
+            and stored_result.get("failed") is True
+            and stored_result.get("completed") is False
+            and stored_result.get("final_response") == ""
+            and isinstance(stored_result.get("error"), str)
+            and stored_result["error"] in managed_failures):
+        result["terminal_outcome"] = {
+            "code": stored_result["error"],
+            "answer_available": False,
+        }
     if provider_rejected_unbilled:
         result["terminal_outcome"] = {
             "code": PROVIDER_TEMPORARILY_UNAVAILABLE,

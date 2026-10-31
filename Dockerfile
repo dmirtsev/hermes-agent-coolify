@@ -39,6 +39,15 @@ COPY hermes_sakoian_manifest.json /opt/hermes/agent/sakoian_analysis_manifest.js
 COPY hermes_sakoian_result.schema.json /opt/hermes/agent/hermes_sakoian_result.schema.json
 COPY hermes_dialogue_models.py /opt/hermes/agent/dialogue_models.py
 COPY hermes_behavior_policy.py /opt/hermes/agent/behavior_policy.py
+COPY hermes_context_budget.py /opt/hermes/agent/context_budget.py
+COPY hermes_context_rows.py /opt/hermes/agent/hermes_context_rows.py
+COPY hermes_managed_validation.py /opt/hermes/agent/hermes_managed_validation.py
+COPY registry/context_budget_routes.json /opt/hermes/agent/context_budget_routes.json
+COPY registry/context_budget_calibration_20261027.json /opt/hermes/agent/context_budget_calibration_20261027.json
+COPY registry/context_budget_calibration_terra_20261028.json /opt/hermes/agent/context_budget_calibration_terra_20261028.json
+COPY registry/context_budget_calibration_v41_20261030.json /opt/hermes/agent/context_budget_calibration_v41_20261030.json
+COPY scripts/install_context_tokenizers.py /opt/hermes-wrapper/install_context_tokenizers.py
+COPY patch_hermes_context_budget.py /opt/hermes-wrapper/patch_hermes_context_budget.py
 COPY patch_hermes_behavior_policy.py /opt/hermes-wrapper/patch_hermes_behavior_policy.py
 COPY patch_hermes_dialogue_models.py /opt/hermes-wrapper/patch_hermes_dialogue_models.py
 COPY patch_hermes_health.py /opt/hermes-wrapper/patch_hermes_health.py
@@ -46,6 +55,7 @@ COPY patch_hermes_openrouter_accounting.py /opt/hermes-wrapper/patch_hermes_open
 COPY patch_hermes_runtime_status.py /opt/hermes-wrapper/patch_hermes_runtime_status.py
 COPY patch_hermes_container_boot.py /opt/hermes-wrapper/patch_hermes_container_boot.py
 COPY patch_hermes_curator_guard.py /opt/hermes-wrapper/patch_hermes_curator_guard.py
+RUN /opt/hermes/.venv/bin/python -c 'import importlib.metadata; assert importlib.metadata.version("jsonschema") == "4.26.0"'
 RUN chmod +x /opt/hermes/tp_knowledge_mcp_setup.sh && \
     chmod +x /opt/hermes/hermes_fixed_model_setup.sh && \
     chmod +x /opt/hermes/hermes_curator_setup.sh && \
@@ -59,6 +69,7 @@ RUN chmod +x /opt/hermes/tp_knowledge_mcp_setup.sh && \
     /opt/hermes/.venv/bin/python /opt/hermes-wrapper/patch_hermes_openrouter_accounting.py && \
     /opt/hermes/.venv/bin/python /opt/hermes-wrapper/patch_hermes_behavior_policy.py && \
     /opt/hermes/.venv/bin/python /opt/hermes-wrapper/patch_hermes_dialogue_models.py && \
+    /opt/hermes/.venv/bin/python /opt/hermes-wrapper/patch_hermes_context_budget.py && \
     rm -f /etc/s6-overlay/s6-rc.d/user/contents.d/dashboard && \
     printf '%s\n' \
       '#!/command/with-contenv sh' \
@@ -79,6 +90,11 @@ RUN printf '%s\n' \
       'exec /opt/hermes/hermes_curator_setup.sh' \
       > /etc/cont-init.d/03-hermes-curator && \
     chmod +x /etc/cont-init.d/03-hermes-curator
+
+# Public, pinned encoders. Download once while building; counting is offline.
+ENV TIKTOKEN_CACHE_DIR=/opt/hermes/tokenizers/tiktoken-cache
+RUN uv pip install --python /opt/hermes/.venv/bin/python --no-cache-dir tiktoken==0.14.0 tokenizers==0.23.3 regex==2026.9.29 && \
+    /opt/hermes/.venv/bin/python /opt/hermes-wrapper/install_context_tokenizers.py
 
 ENTRYPOINT ["/init", "/opt/hermes/hermes_main_wrapper.sh"]
 # Run one foreground gateway; the patched reconciler registers the s6 slot but

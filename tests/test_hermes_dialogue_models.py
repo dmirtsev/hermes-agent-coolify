@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import ast
+import json
 import os
 import threading
 import tempfile
+import subprocess
+import sys
 import unittest
 from pathlib import Path
+from copy import deepcopy
 from types import ModuleType, SimpleNamespace
 from typing import Any, Optional
 from unittest.mock import patch
@@ -16,9 +20,27 @@ import hermes_durable_accounting as durable
 from hermes_behavior_policy import managed_response_settings
 
 ENABLED = {"HERMES_DIALOGUE_MODEL_CHOICE_ENABLED": "true", "HERMES_RUNTIME_TIER": "economy", "HERMES_FIXED_MODEL_PROVIDER": "openrouter"}
+TERRA_ENABLED = {**ENABLED, "DEPLOYMENT_ENVIRONMENT": "test", "HERMES_TERRA_PERIODS_ENABLED": "true"}
 
 
 class DialogueModelsTests(unittest.TestCase):
+    def test_imports_from_installed_package_layout_without_qa_path(self):
+        with tempfile.TemporaryDirectory() as directory:
+            package = Path(directory) / "agent"
+            package.mkdir()
+            (package / "__init__.py").write_text("")
+            source = Path(__file__).resolve().parents[1]
+            for original, target in [("hermes_dialogue_models.py", "dialogue_models.py"),
+                                     ("hermes_managed_validation.py", "hermes_managed_validation.py"),
+                                     ("hermes_context_rows.py", "hermes_context_rows.py"),
+                                     ("hermes_durable_accounting.py", "durable_accounting.py")]:
+                (package / target).write_bytes((source / original).read_bytes())
+            process = subprocess.run([sys.executable, "-c",
+                "from agent.dialogue_models import validate_dialogue_model; assert validate_dialogue_model({}, None) is None"],
+                cwd=directory, env={k: v for k, v in os.environ.items() if k != "PYTHONPATH"},
+                capture_output=True, text=True)
+            self.assertEqual(process.returncode, 0, process.stderr)
+
     def test_absent_choice_keeps_existing_behavior(self):
         self.assertIsNone(models.validate_dialogue_model({"model": "arbitrary-cosmetic-model"}, None, {}))
         kwargs = {"credential_pool": threading.Lock()}
@@ -29,7 +51,13 @@ class DialogueModelsTests(unittest.TestCase):
     def test_validate_choice_before_dispatch(self):
         for code, profile in models.PROFILES.items():
             body = {"model": profile["model"], "tp_dialogue_model": code}
-            self.assertEqual(models.validate_dialogue_model(body, "stable-request", ENABLED), code)
+            if code == "deepseek_flash_plus":
+                # Candidate route is intentionally fail-closed until its
+                # certificate exists; it is tested by dedicated guards below.
+                continue
+            if code == "gpt_terra":
+                body.update(tp_context_budget={"profile": "natal_transit"}, tp_managed_method_context={"synthetic": True})
+            self.assertEqual(models.validate_dialogue_model(body, "stable-request", TERRA_ENABLED), code)
             for variant, env in [(body, {}), ({**body, "stream": True}, ENABLED), ({**body, "model": "other/model"}, ENABLED)]:
                 with self.assertRaises(models.DialogueModelError):
                     models.validate_dialogue_model(variant, "stable-request", env)
@@ -70,6 +98,90 @@ class DialogueModelsTests(unittest.TestCase):
             self.assertIsNone(models.public_dialogue_models())
         with patch.dict(os.environ, ENABLED):
             self.assertEqual(models.public_dialogue_models(), {"version": 1, "codes": ["deepseek_flash", "gpt_luna"]})
+        with patch.dict(os.environ, TERRA_ENABLED):
+            self.assertEqual(models.public_dialogue_models(), {"version": 1, "codes": ["deepseek_flash", "gpt_luna", "gpt_terra"]})
+
+    def test_terra_pins_openai_and_medium_reasoning_without_fallback(self):
+        kwargs = {"provider": "openrouter", "base_url": "https://openrouter.ai/api/v1",
+                  "request_overrides": {"extra_body": {"models": ["other/model"]}}}
+        with patch.dict(os.environ, TERRA_ENABLED):
+            result = models.dialogue_agent_settings("gpt_terra", kwargs, "old/model", {}, "fallback")
+        self.assertEqual(result[1:], ("openai/gpt-6.1-terra", {"effort": "medium"}, None))
+        self.assertEqual(result[0]["request_overrides"]["extra_body"]["provider"],
+                         {"only": ["openai"], "allow_fallbacks": False,
+                          "require_parameters": True, "max_price": {"prompt": 2.5, "completion": 7.5}})
+        self.assertEqual(result[0]["request_overrides"]["extra_body"]["reasoning"], {"effort": "medium"})
+        self.assertEqual(result[0]["max_tokens"], 8192)
+
+    def test_terra_is_not_a_production_or_natal_route(self):
+        body = {"model": "openai/gpt-6.1-terra", "tp_dialogue_model": "gpt_terra",
+                "tp_context_budget": {"profile": "natal_transit"}, "tp_managed_method_context": {"synthetic": True}}
+        for change in [{"DEPLOYMENT_ENVIRONMENT": "production"}, {"HERMES_TERRA_PERIODS_ENABLED": "false"}]:
+            with self.assertRaises(models.DialogueModelError):
+                models.validate_dialogue_model(body, "synthetic", {**TERRA_ENABLED, **change})
+        for change in [{"tp_context_budget": {"profile": "natal"}}, {"tp_managed_method_context": None}]:
+            with self.assertRaises(models.DialogueModelError):
+                models.validate_dialogue_model({**body, **change}, "synthetic", TERRA_ENABLED)
+
+    def test_terra_accepts_distinct_saved_natal_and_core_projection_result_ids(self):
+        body = {"model": "openai/gpt-6.1-terra", "tp_dialogue_model": "gpt_terra",
+                "tp_context_budget": {"profile": "natal_transit"},
+                "tp_execution_mode": "interpretation_facts_v1", "tp_answer_format": "hermes_managed_v1",
+                "messages": [{"role": "system", "content": "managed"}, {"role": "user", "content": json.dumps({
+                    "context": {"temporal": {"kind": "transit_moment", "source": {"natalResultId": "n"}}, "source": {"resultId": "n"}},
+                    # Real Core fact projections use local result_id="main";
+                    # the saved natal identity is separately carried by context.
+                    "natalSource": {"resultId": "main"},
+                    "facts": {"layers": [{"chartType": "natal", "relationMethod": "base"}, {"chartType": "transit", "relationMethod": "transit"}],
+                              "statements": {"format": "typed_rows_v1", "layouts": [["ref", "status", "text"]],
+                                             "rows": [[0, "s1", "present", "Натал: Солнце в Овне"],
+                                                      [0, "s2", "present", "Транзит: Нептун — квадрат — натал: ASC"]],
+                                             "count": 2}},
+                })}]}
+        self.assertEqual(models.validate_dialogue_model(body, "synthetic", TERRA_ENABLED), "gpt_terra")
+        bad = dict(body)
+        bad["messages"] = list(body["messages"])
+        bad["messages"][1] = {"role": "user", "content": body["messages"][1]["content"].replace("transit_moment", "natal")}
+        with self.assertRaises(models.DialogueModelError):
+            models.validate_dialogue_model(bad, "synthetic", TERRA_ENABLED)
+        for key, value in [("natalSource", None), ("facts", {"layers": [{"chartType": "natal"}], "statements": [{"ref": "s1"}]}),
+                           ("tp_dialogue_mode", "free_dialogue")]:
+            invalid = dict(body)
+            if key == "tp_dialogue_mode": invalid[key] = value
+            else:
+                user = json.loads(invalid["messages"][1]["content"]); user[key] = value
+                invalid["messages"] = [invalid["messages"][0], {"role": "user", "content": json.dumps(user)}]
+            with self.assertRaises(models.DialogueModelError):
+                models.validate_dialogue_model(invalid, "synthetic", TERRA_ENABLED)
+
+        # The production builder packs facts. Exercise malformed packed rows,
+        # mismatched natal identity and a different forecasting method as well.
+        original = json.loads(body["messages"][1]["content"])
+        mutations = [
+            lambda p: p["facts"].update(statements=[]),
+            lambda p: p["facts"]["statements"].update(count=3),
+            lambda p: p["facts"]["statements"].update(rows=[[2, "s1"]], count=1),
+            lambda p: p["natalSource"].update(resultId=None),
+            lambda p: p["natalSource"].update(resultId=""),
+            lambda p: p["natalSource"].update(resultId=123),
+            lambda p: p["context"]["source"].update(resultId="another-natal"),
+            lambda p: p["context"]["temporal"]["source"].update(natalResultId="another-natal"),
+            lambda p: p["context"].update(source=None),
+            lambda p: p["context"]["temporal"].pop("source"),
+            lambda p: p["facts"]["layers"].append({"chartType": "solar_return", "relationMethod": "solar_return"}),
+            lambda p: p["facts"]["layers"][1].update(relationMethod="progression"),
+        ]
+        for mutate in mutations:
+            payload = deepcopy(original)
+            mutate(payload)
+            invalid = {**body, "messages": [body["messages"][0], {"role": "user", "content": json.dumps(payload)}]}
+            with self.assertRaises(models.DialogueModelError):
+                models.validate_dialogue_model(invalid, "synthetic", TERRA_ENABLED)
+
+        for field, value in [("tp_execution_mode", "other"), ("tp_answer_format", "other"),
+                             ("tp_context_budget", {"profile": "natal"})]:
+            with self.assertRaises(models.DialogueModelError):
+                models.validate_dialogue_model({**body, field: value}, "synthetic", TERRA_ENABLED)
 
     def test_journal_replays_one_result_and_rejects_model_change_under_same_key(self):
         with tempfile.TemporaryDirectory() as folder, patch.dict(os.environ, {
@@ -130,6 +242,65 @@ class PatchedConstructorTests(unittest.TestCase):
             self.assertIsNone(agent.session_db)
             self.assertTrue(agent.skip_context_files)
             self.assertTrue(agent.skip_memory)
+
+
+class DeepSeekFlashPlusGuardTests(unittest.TestCase):
+    def test_feature_flag_is_test_only_and_not_public(self):
+        env = {**ENABLED, "DEPLOYMENT_ENVIRONMENT": "test",
+               "HERMES_DEEPSEEK_FLASH_PLUS_ENABLED": "true",
+               "HERMES_DEEPSEEK_FLASH_PLUS_BACKEND_CAPABILITY": "true",
+               "HERMES_DEEPSEEK_FLASH_PLUS_MAX_CHARGE_KOPECKS": "5000",
+               "HERMES_DEEPSEEK_FLASH_PLUS_PRICE_POLICY_VERSION": "policy-v1"}
+        self.assertTrue(models.deepseek_flash_plus_enabled(env))
+        with patch.dict(os.environ, env, clear=True):
+            self.assertIn("deepseek_flash_plus", models.public_dialogue_models()["codes"])
+
+    def test_feature_flag_is_disabled_outside_test(self):
+        env = {**ENABLED, "DEPLOYMENT_ENVIRONMENT": "production",
+               "HERMES_DEEPSEEK_FLASH_PLUS_ENABLED": "true"}
+        self.assertFalse(models.deepseek_flash_plus_enabled(env))
+
+    def test_plus_requires_budget_even_when_certified(self):
+        env = {**ENABLED, "DEPLOYMENT_ENVIRONMENT": "test",
+               "HERMES_DEEPSEEK_FLASH_PLUS_ENABLED": "true",
+               "HERMES_DEEPSEEK_FLASH_PLUS_BACKEND_CAPABILITY": "true",
+               "HERMES_DEEPSEEK_FLASH_PLUS_MAX_CHARGE_KOPECKS": "5000",
+               "HERMES_DEEPSEEK_FLASH_PLUS_PRICE_POLICY_VERSION": "policy-v1"}
+        body = {"model": "deepseek/deepseek-v4.1-flash",
+                "tp_dialogue_model": "deepseek_flash_plus",
+                "messages": [{"role": "user", "content": "x"}]}
+        with self.assertRaisesRegex(models.DialogueModelError, "budget_required"):
+            models.validate_dialogue_model(body, "operation", env)
+
+    def test_plus_rejects_natal_and_free_routes(self):
+        env = {**ENABLED, "DEPLOYMENT_ENVIRONMENT": "test",
+               "HERMES_DEEPSEEK_FLASH_PLUS_ENABLED": "true",
+               "HERMES_DEEPSEEK_FLASH_PLUS_BACKEND_CAPABILITY": "true",
+               "HERMES_DEEPSEEK_FLASH_PLUS_MAX_CHARGE_KOPECKS": "5000",
+               "HERMES_DEEPSEEK_FLASH_PLUS_PRICE_POLICY_VERSION": "policy-v1"}
+        body = {"model": "deepseek/deepseek-v4.1-flash",
+                "tp_dialogue_model": "deepseek_flash_plus",
+                "tp_context_budget": {"profile": "natal"},
+                "tp_dialogue_mode": "free_dialogue"}
+        with self.assertRaisesRegex(models.DialogueModelError, "transit_only"):
+            models.validate_dialogue_model(body, "operation", env)
+
+    def test_certified_plus_pins_provider_without_fallback(self):
+        env = {**ENABLED, "DEPLOYMENT_ENVIRONMENT": "test",
+               "HERMES_DEEPSEEK_FLASH_PLUS_ENABLED": "true",
+               "HERMES_DEEPSEEK_FLASH_PLUS_BACKEND_CAPABILITY": "true",
+               "HERMES_DEEPSEEK_FLASH_PLUS_MAX_CHARGE_KOPECKS": "5000",
+               "HERMES_DEEPSEEK_FLASH_PLUS_PRICE_POLICY_VERSION": "policy-v1"}
+        with patch.dict(os.environ, env, clear=True):
+            settings = models.dialogue_agent_settings(
+                    "deepseek_flash_plus",
+                    {"provider": "openrouter",
+                     "base_url": "https://openrouter.ai/api/v1"},
+                    "deepseek/deepseek-v4.1-flash", {}, None)
+            self.assertEqual(settings[0]["request_overrides"]["extra_body"]["provider"], {
+                "order": ["deepinfra/fp8"], "only": ["deepinfra/fp8"],
+                "allow_fallbacks": False, "max_price": {"prompt": 0.2, "completion": 0.6},
+                "require_parameters": True})
 
 
 if __name__ == "__main__":
