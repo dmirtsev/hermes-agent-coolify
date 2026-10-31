@@ -35,3 +35,12 @@ Sakoian now uses one direct SDK call inside the existing durable accounting
 scope: SDK retries disabled, fixed approved economy model, max_tokens=4096,
 reasoning disabled, no provider fallback. A length/empty/tool response fails
 closed; it is never silently continued. Other Hermes routes are unchanged.
+
+The live aggregate check used one generation but exposed narration errors:
+planet signs were mixed and not_applicable was described as natal reinforcement.
+The model prompt now uses named natal/transit planet tables and direct event
+records rather than opaque fact-hash lookups. Audit projection and all pins are
+unchanged. Same-planet aspects are called same_planet_transit in narration data;
+the persisted legacy activation code is not exposed to the model. This is a
+readability correction, not a claim that prompt instructions prove prose accuracy.
+A new live quality check needs a separate explicitly authorized generation.

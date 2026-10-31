@@ -77,6 +77,24 @@ class AggregateContextTests(unittest.TestCase):
         with patch.object(module,'MAX_AGGREGATE_PROMPT_BYTES',100):
             with self.assertRaises(SakoianContextError): self.prepare(aggregate_fixture())
 
+    def test_readable_projection_preserves_each_planet_role_and_pair_status(self):
+        value=aggregate_fixture(); a=value['aggregate']
+        projection=module._narrative_projection(a)
+        for event,member in zip(projection['events'],a['analyses']):
+            facts={f['fact_id']:f['value'] for f in member['facts']}
+            self.assertEqual(projection['transit_planets'][event['transit_planet']]['sign'],facts['transit.sign'])
+            self.assertEqual(projection['natal_planets'][event['natal_planet']]['sign'],facts['natal.receiver_sign'])
+            self.assertEqual(projection['natal_planets'][event['natal_planet']]['house'],facts['natal.receiver_house'])
+            self.assertEqual(event['natal_pair'],member['natal_pair'])
+        same=next(e for e in projection['events'] if e['transit_planet']==e['natal_planet'])
+        self.assertEqual(same['activation_kind'],'same_planet_transit')
+        self.assertEqual(same['natal_reinforcement']['status'],'not_applicable')
+        guard=self.prepare(value)
+        self.assertNotIn('self_return',guard.prompt)
+        self.assertNotIn('shared_facts',guard.prompt)
+        self.assertIn('НЕ натальное усиление',guard.prompt)
+        self.assertEqual(len(projection['natal_planets']),3)
+
     def test_vendored_projection_and_schema_are_present(self):
         self.assertTrue((ROOT/'hermes_sakoian_aggregate.schema.json').is_file())
         value=aggregate_fixture();self.assertEqual(value['aggregate']['projection'], project(value['aggregate']['analyses']))
