@@ -1339,6 +1339,8 @@ replace_once(
             )
             if accounting is not None:
                 err_body["hermes_accounting"] = accounting
+            if result.get("tp_analysis_validation") is not None:
+                err_body["tp_analysis_validation"] = result["tp_analysis_validation"]
             response_headers["X-Hermes-Completed"] = "false"
 """,
     "hard-failure accounting response",
@@ -1445,6 +1447,8 @@ replace_once(
             response_data["tp_method_execution"] = versioned_method_guard.receipt''',
     '''        if sakoian_analysis_guard is not None:
             response_data["tp_analysis_execution"] = sakoian_analysis_guard.receipt
+            if sakoian_analysis_guard.narrative_catalogue is not None:
+                response_data["tp_analysis_validation"] = result.get("tp_analysis_validation")
         if versioned_method_guard is not None:
             response_data["tp_method_execution"] = versioned_method_guard.receipt''',
     "Sakoian execution receipt",
@@ -1452,13 +1456,13 @@ replace_once(
 replace_once(
     API_SERVER,
     '        accounting_request_key: Optional[str] = None,\n',
-    '        sakoian_single_call: bool = False,\n        accounting_request_key: Optional[str] = None,\n',
+    '        sakoian_single_call: bool = False,\n        sakoian_narrative_catalogue: Optional[dict] = None,\n        accounting_request_key: Optional[str] = None,\n',
     "Sakoian bounded narration argument",
 )
 replace_once(
     API_SERVER,
     '                accounting_request_key=idempotency_key,\n',
-    '                sakoian_single_call=sakoian_analysis_guard is not None,\n                accounting_request_key=idempotency_key,\n',
+    '                sakoian_single_call=sakoian_analysis_guard is not None,\n                sakoian_narrative_catalogue=sakoian_analysis_guard.narrative_catalogue if sakoian_analysis_guard else None,\n                accounting_request_key=idempotency_key,\n',
     "Sakoian bounded narration selection",
 )
 replace_once(
@@ -1469,7 +1473,7 @@ replace_once(
                     task_id=effective_task_id,
                 )""",
     """                if sakoian_single_call:
-                    result = narrate_sakoian_once(agent, user_message, ephemeral_system_prompt)
+                    result = narrate_sakoian_once(agent, user_message, ephemeral_system_prompt, catalogue=sakoian_narrative_catalogue)
                 else:
                     result = agent.run_conversation(
                         user_message=user_message,

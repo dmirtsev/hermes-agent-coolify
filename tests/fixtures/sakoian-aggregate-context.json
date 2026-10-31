@@ -1,17 +1,17 @@
 {
-  "schema_version": "tp-astro-analysis.hermes-aggregate.v1",
+  "schema_version": "tp-astro-analysis.hermes-aggregate.v2",
   "request_id": "synthetic-aggregate-five-v1",
   "access_scope_ref": "synthetic-aggregate-test",
   "subject_ref": "synthetic-subject",
   "chart_ref": "synthetic-chart",
   "conversation_ref": "synthetic-conversation",
   "aggregate": {
-    "schema_version": "tp-astro-analysis.aggregate-result.v1",
+    "schema_version": "tp-astro-analysis.aggregate-result.v2",
     "request_id": "synthetic-aggregate-five-v1",
     "method_ref": {
       "method_id": "sakoian_transit_analysis",
       "version": "0.3.0",
-      "package_hash": "042ceb85c93aed13ab86e7006bea0853b95e9ba725ecbd3ba82e14a55116be7a",
+      "package_hash": "08632cac2a786ef0ef406120339a47203c142f93eaed32e5916fdd78fa1880bd",
       "status": "test_only",
       "knowledge_ref": {
         "environment": "test",
@@ -34,7 +34,7 @@
     "analyses": [
       {
         "schema_version": "tp-astro-analysis.result.v1",
-        "analysis_id": "analysis_3ad112ed35aa3bee57b56a0c",
+        "analysis_id": "analysis_b377d88629b0e5fc3543a445",
         "request_id": "synthetic-aggregate-five-v1",
         "access_scope_ref": "synthetic-aggregate-test",
         "subject_ref": "synthetic-subject",
@@ -42,7 +42,7 @@
         "method_ref": {
           "method_id": "sakoian_transit_analysis",
           "version": "0.3.0",
-          "package_hash": "042ceb85c93aed13ab86e7006bea0853b95e9ba725ecbd3ba82e14a55116be7a",
+          "package_hash": "08632cac2a786ef0ef406120339a47203c142f93eaed32e5916fdd78fa1880bd",
           "status": "test_only",
           "knowledge_ref": {
             "environment": "test",
@@ -52,7 +52,7 @@
             "knowledge_base_slug": "sakoian-transit-primary-v1"
           }
         },
-        "input_hash": "3ad112ed35aa3bee57b56a0c9a6a8b7bb44fcdcff25da09579546972bf06f13f",
+        "input_hash": "b377d88629b0e5fc3543a445928497cc5dcac70ee08f42bd5e040f759134ccc7",
         "status": "complete",
         "facts": [
           {
@@ -451,7 +451,7 @@
       },
       {
         "schema_version": "tp-astro-analysis.result.v1",
-        "analysis_id": "analysis_7ff5b0f6dcf840e1260f3664",
+        "analysis_id": "analysis_09681508203bad11a6872c8b",
         "request_id": "synthetic-aggregate-five-v1",
         "access_scope_ref": "synthetic-aggregate-test",
         "subject_ref": "synthetic-subject",
@@ -459,7 +459,7 @@
         "method_ref": {
           "method_id": "sakoian_transit_analysis",
           "version": "0.3.0",
-          "package_hash": "042ceb85c93aed13ab86e7006bea0853b95e9ba725ecbd3ba82e14a55116be7a",
+          "package_hash": "08632cac2a786ef0ef406120339a47203c142f93eaed32e5916fdd78fa1880bd",
           "status": "test_only",
           "knowledge_ref": {
             "environment": "test",
@@ -469,7 +469,7 @@
             "knowledge_base_slug": "sakoian-transit-primary-v1"
           }
         },
-        "input_hash": "7ff5b0f6dcf840e1260f3664b6d05f6bb43a24004d3516f575ed0f20133c8b24",
+        "input_hash": "09681508203bad11a6872c8bb4cb27f2482d125529dd582d0a58dda7f4de561c",
         "status": "complete",
         "facts": [
           {
@@ -868,7 +868,7 @@
       },
       {
         "schema_version": "tp-astro-analysis.result.v1",
-        "analysis_id": "analysis_9d46232abe2310c720a65f22",
+        "analysis_id": "analysis_ab1893486b668069b4e28ac6",
         "request_id": "synthetic-aggregate-five-v1",
         "access_scope_ref": "synthetic-aggregate-test",
         "subject_ref": "synthetic-subject",
@@ -876,7 +876,7 @@
         "method_ref": {
           "method_id": "sakoian_transit_analysis",
           "version": "0.3.0",
-          "package_hash": "042ceb85c93aed13ab86e7006bea0853b95e9ba725ecbd3ba82e14a55116be7a",
+          "package_hash": "08632cac2a786ef0ef406120339a47203c142f93eaed32e5916fdd78fa1880bd",
           "status": "test_only",
           "knowledge_ref": {
             "environment": "test",
@@ -886,7 +886,7 @@
             "knowledge_base_slug": "sakoian-transit-primary-v1"
           }
         },
-        "input_hash": "9d46232abe2310c720a65f22dea2abcc4b277f9d714c1216e028bd7fb2574d98",
+        "input_hash": "ab1893486b668069b4e28ac6c6ea95ecedf115f8652fd7fcae2e1dec5f5eba0c",
         "status": "complete",
         "facts": [
           {
@@ -1297,7 +1297,7 @@
       },
       {
         "schema_version": "tp-astro-analysis.result.v1",
-        "analysis_id": "analysis_1ca53d78c009da246b2eaeb9",
+        "analysis_id": "analysis_b362cb70828c2ce2d043e38e",
         "request_id": "synthetic-aggregate-five-v1",
         "access_scope_ref": "synthetic-aggregate-test",
         "subject_ref": "synthetic-subject",
@@ -1305,7 +1305,7 @@
         "method_ref": {
           "method_id": "sakoian_transit_analysis",
           "version": "0.3.0",
-          "package_hash": "042ceb85c93aed13ab86e7006bea0853b95e9ba725ecbd3ba82e14a55116be7a",
+          "package_hash": "08632cac2a786ef0ef406120339a47203c142f93eaed32e5916fdd78fa1880bd",
           "status": "test_only",
           "knowledge_ref": {
             "environment": "test",
@@ -1315,7 +1315,7 @@
             "knowledge_base_slug": "sakoian-transit-primary-v1"
           }
         },
-        "input_hash": "1ca53d78c009da246b2eaeb92b8bbaa1a4d828de58893e3368909c9146845182",
+        "input_hash": "b362cb70828c2ce2d043e38ec71fa9727572393577bdb75a5bbf1a6d986e4a8d",
         "status": "complete",
         "facts": [
           {
@@ -1726,7 +1726,7 @@
       },
       {
         "schema_version": "tp-astro-analysis.result.v1",
-        "analysis_id": "analysis_41eca165732254757dd80103",
+        "analysis_id": "analysis_1ec0acfc0c8489e62986ebea",
         "request_id": "synthetic-aggregate-five-v1",
         "access_scope_ref": "synthetic-aggregate-test",
         "subject_ref": "synthetic-subject",
@@ -1734,7 +1734,7 @@
         "method_ref": {
           "method_id": "sakoian_transit_analysis",
           "version": "0.3.0",
-          "package_hash": "042ceb85c93aed13ab86e7006bea0853b95e9ba725ecbd3ba82e14a55116be7a",
+          "package_hash": "08632cac2a786ef0ef406120339a47203c142f93eaed32e5916fdd78fa1880bd",
           "status": "test_only",
           "knowledge_ref": {
             "environment": "test",
@@ -1744,7 +1744,7 @@
             "knowledge_base_slug": "sakoian-transit-primary-v1"
           }
         },
-        "input_hash": "41eca165732254757dd80103e18dff71cd18d8f4ea1168b5914c51f5ad72deb4",
+        "input_hash": "1ec0acfc0c8489e62986ebea1b86410255956ab2786a4f907e8366167b3e7acb",
         "status": "complete",
         "facts": [
           {
@@ -2150,9 +2150,9 @@
           "kind": "shared_natal_receiver",
           "key": "moon",
           "member_ids": [
-            "analysis_41eca165732254757dd80103",
-            "analysis_7ff5b0f6dcf840e1260f3664",
-            "analysis_9d46232abe2310c720a65f22"
+            "analysis_09681508203bad11a6872c8b",
+            "analysis_1ec0acfc0c8489e62986ebea",
+            "analysis_ab1893486b668069b4e28ac6"
           ]
         },
         {
@@ -2160,10 +2160,10 @@
           "kind": "shared_transit_house",
           "key": "10",
           "member_ids": [
-            "analysis_1ca53d78c009da246b2eaeb9",
-            "analysis_41eca165732254757dd80103",
-            "analysis_7ff5b0f6dcf840e1260f3664",
-            "analysis_9d46232abe2310c720a65f22"
+            "analysis_09681508203bad11a6872c8b",
+            "analysis_1ec0acfc0c8489e62986ebea",
+            "analysis_ab1893486b668069b4e28ac6",
+            "analysis_b362cb70828c2ce2d043e38e"
           ]
         },
         {
@@ -2171,17 +2171,17 @@
           "kind": "shared_transit_planet",
           "key": "sun",
           "member_ids": [
-            "analysis_1ca53d78c009da246b2eaeb9",
-            "analysis_9d46232abe2310c720a65f22"
+            "analysis_ab1893486b668069b4e28ac6",
+            "analysis_b362cb70828c2ce2d043e38e"
           ]
         }
       ],
       "unlinked": [
-        "analysis_3ad112ed35aa3bee57b56a0c"
+        "analysis_b377d88629b0e5fc3543a445"
       ],
       "events": [
         {
-          "analysis_id": "analysis_3ad112ed35aa3bee57b56a0c",
+          "analysis_id": "analysis_b377d88629b0e5fc3543a445",
           "aspect_id": "core-overlay-jupiter-base-jupiter-square",
           "selection": {
             "transit_object_id": "jupiter",
@@ -2250,7 +2250,7 @@
           ]
         },
         {
-          "analysis_id": "analysis_7ff5b0f6dcf840e1260f3664",
+          "analysis_id": "analysis_09681508203bad11a6872c8b",
           "aspect_id": "core-overlay-mars-base-moon-sextile",
           "selection": {
             "transit_object_id": "mars",
@@ -2319,7 +2319,7 @@
           ]
         },
         {
-          "analysis_id": "analysis_9d46232abe2310c720a65f22",
+          "analysis_id": "analysis_ab1893486b668069b4e28ac6",
           "aspect_id": "core-overlay-sun-base-moon-sextile",
           "selection": {
             "transit_object_id": "sun",
@@ -2390,7 +2390,7 @@
           ]
         },
         {
-          "analysis_id": "analysis_1ca53d78c009da246b2eaeb9",
+          "analysis_id": "analysis_b362cb70828c2ce2d043e38e",
           "aspect_id": "core-overlay-sun-base-saturn-trine",
           "selection": {
             "transit_object_id": "sun",
@@ -2461,7 +2461,7 @@
           ]
         },
         {
-          "analysis_id": "analysis_41eca165732254757dd80103",
+          "analysis_id": "analysis_1ec0acfc0c8489e62986ebea",
           "aspect_id": "core-overlay-venus-base-moon-sextile",
           "selection": {
             "transit_object_id": "venus",
@@ -2738,8 +2738,432 @@
       "omitted_count": 0,
       "partial_count": 0
     },
-    "aggregate_id": "aggregate_d61ad5139e9db404c48303cc",
-    "aggregate_hash": "d58771678d71ec7999d10c43a5302f9a36aebeec146af214f5c8d388e6ebdf53"
+    "narrative_catalogue": {
+      "schema_version": "tp-astro-analysis.narrative-catalogue.v1",
+      "events": [
+        {
+          "event_ref": "T1",
+          "analysis_id": "analysis_b377d88629b0e5fc3543a445",
+          "claims": [
+            {
+              "claim_id": "event",
+              "text": "Транзитная планета: Юпитер; принимающая натальная планета: Юпитер; аспект: квадрат.",
+              "basis_fact_ids": [
+                "transit.planet",
+                "natal.receiver",
+                "transit.aspect"
+              ],
+              "basis_derivation_ids": [
+                "primary.event"
+              ]
+            },
+            {
+              "claim_id": "positions",
+              "text": "Положение транзитной планеты: знак Рак, натальный дом — 4; знак куспида этого дома — Рак. Положение принимающей натальной планеты: знак Овен, дом — 1.",
+              "basis_fact_ids": [
+                "transit.sign",
+                "transit.natal_house",
+                "natal.cusp_sign",
+                "natal.receiver_sign",
+                "natal.receiver_house"
+              ],
+              "basis_derivation_ids": [
+                "primary.transit_sign",
+                "primary.receiver",
+                "projection.transit_house"
+              ]
+            },
+            {
+              "claim_id": "nature",
+              "text": "Качества аспекта в опубликованной методике: препятствия, усилие, дисциплина. Они не предопределяют исход событий.",
+              "basis_fact_ids": [
+                "transit.aspect"
+              ],
+              "basis_derivation_ids": [
+                "primary.aspect_nature"
+              ]
+            },
+            {
+              "claim_id": "orb_phase",
+              "text": "Орбис — 3.9609°, допустимый — 5°. Фаза — неизвестна.",
+              "basis_fact_ids": [
+                "transit.aspect"
+              ],
+              "basis_derivation_ids": [
+                "primary.synthesis"
+              ]
+            },
+            {
+              "claim_id": "pair",
+              "text": "Транзит идёт к одноимённой натальной планете. Проверка отдельной натальной связи планеты с самой собой неприменима; натального усиления из этого не следует. Для связи планеты с собой правило натального усиления неприменимо.",
+              "basis_fact_ids": [
+                "natal.pair",
+                "transit.aspect"
+              ],
+              "basis_derivation_ids": [
+                "primary.natal_pair",
+                "primary.natal_reinforcement"
+              ]
+            }
+          ]
+        },
+        {
+          "event_ref": "T2",
+          "analysis_id": "analysis_09681508203bad11a6872c8b",
+          "claims": [
+            {
+              "claim_id": "event",
+              "text": "Транзитная планета: Марс; принимающая натальная планета: Луна; аспект: секстиль.",
+              "basis_fact_ids": [
+                "transit.planet",
+                "natal.receiver",
+                "transit.aspect"
+              ],
+              "basis_derivation_ids": [
+                "primary.event"
+              ]
+            },
+            {
+              "claim_id": "positions",
+              "text": "Положение транзитной планеты: знак Козерог, натальный дом — 10; знак куспида этого дома — Козерог. Положение принимающей натальной планеты: знак Скорпион, дом — 8.",
+              "basis_fact_ids": [
+                "transit.sign",
+                "transit.natal_house",
+                "natal.cusp_sign",
+                "natal.receiver_sign",
+                "natal.receiver_house"
+              ],
+              "basis_derivation_ids": [
+                "primary.transit_sign",
+                "primary.receiver",
+                "projection.transit_house"
+              ]
+            },
+            {
+              "claim_id": "nature",
+              "text": "Качества аспекта в опубликованной методике: интеллект, коммуникация, возможность. Они не предопределяют исход событий.",
+              "basis_fact_ids": [
+                "transit.aspect"
+              ],
+              "basis_derivation_ids": [
+                "primary.aspect_nature"
+              ]
+            },
+            {
+              "claim_id": "orb_phase",
+              "text": "Орбис — 0.2523°, допустимый — 5°. Фаза — неизвестна.",
+              "basis_fact_ids": [
+                "transit.aspect"
+              ],
+              "basis_derivation_ids": [
+                "primary.synthesis"
+              ]
+            },
+            {
+              "claim_id": "pair",
+              "text": "В проверенном наборе натальных аспектов и орбисов связь этих планет отсутствует. Это не означает, что транзит слабее, мягче или новее. Основания говорить об активации существующей натальной связи нет.",
+              "basis_fact_ids": [
+                "natal.pair",
+                "transit.aspect"
+              ],
+              "basis_derivation_ids": [
+                "primary.natal_pair",
+                "primary.natal_reinforcement"
+              ]
+            }
+          ]
+        },
+        {
+          "event_ref": "T3",
+          "analysis_id": "analysis_ab1893486b668069b4e28ac6",
+          "claims": [
+            {
+              "claim_id": "event",
+              "text": "Транзитная планета: Солнце; принимающая натальная планета: Луна; аспект: секстиль.",
+              "basis_fact_ids": [
+                "transit.planet",
+                "natal.receiver",
+                "transit.aspect"
+              ],
+              "basis_derivation_ids": [
+                "primary.event"
+              ]
+            },
+            {
+              "claim_id": "positions",
+              "text": "Положение транзитной планеты: знак Козерог, натальный дом — 10; знак куспида этого дома — Козерог. Положение принимающей натальной планеты: знак Скорпион, дом — 8.",
+              "basis_fact_ids": [
+                "transit.sign",
+                "transit.natal_house",
+                "natal.cusp_sign",
+                "natal.receiver_sign",
+                "natal.receiver_house"
+              ],
+              "basis_derivation_ids": [
+                "primary.transit_sign",
+                "primary.receiver",
+                "projection.transit_house"
+              ]
+            },
+            {
+              "claim_id": "nature",
+              "text": "Качества аспекта в опубликованной методике: интеллект, коммуникация, возможность. Они не предопределяют исход событий.",
+              "basis_fact_ids": [
+                "transit.aspect"
+              ],
+              "basis_derivation_ids": [
+                "primary.aspect_nature"
+              ]
+            },
+            {
+              "claim_id": "orb_phase",
+              "text": "Орбис — 2.2457°, допустимый — 5°. Фаза — неизвестна.",
+              "basis_fact_ids": [
+                "transit.aspect"
+              ],
+              "basis_derivation_ids": [
+                "primary.synthesis"
+              ]
+            },
+            {
+              "claim_id": "pair",
+              "text": "В натальной карте между этими планетами есть связь: секстиль. По методике активируется существующая натальная связь; усиление напряжения этим правилом не установлено.",
+              "basis_fact_ids": [
+                "natal.pair",
+                "transit.aspect"
+              ],
+              "basis_derivation_ids": [
+                "primary.natal_pair",
+                "primary.natal_reinforcement"
+              ]
+            }
+          ]
+        },
+        {
+          "event_ref": "T4",
+          "analysis_id": "analysis_b362cb70828c2ce2d043e38e",
+          "claims": [
+            {
+              "claim_id": "event",
+              "text": "Транзитная планета: Солнце; принимающая натальная планета: Сатурн; аспект: тригон.",
+              "basis_fact_ids": [
+                "transit.planet",
+                "natal.receiver",
+                "transit.aspect"
+              ],
+              "basis_derivation_ids": [
+                "primary.event"
+              ]
+            },
+            {
+              "claim_id": "positions",
+              "text": "Положение транзитной планеты: знак Козерог, натальный дом — 10; знак куспида этого дома — Козерог. Положение принимающей натальной планеты: знак Телец, дом — 1.",
+              "basis_fact_ids": [
+                "transit.sign",
+                "transit.natal_house",
+                "natal.cusp_sign",
+                "natal.receiver_sign",
+                "natal.receiver_house"
+              ],
+              "basis_derivation_ids": [
+                "primary.transit_sign",
+                "primary.receiver",
+                "projection.transit_house"
+              ]
+            },
+            {
+              "claim_id": "nature",
+              "text": "Качества аспекта в опубликованной методике: гармоничность, творчество, расширение. Они не предопределяют исход событий.",
+              "basis_fact_ids": [
+                "transit.aspect"
+              ],
+              "basis_derivation_ids": [
+                "primary.aspect_nature"
+              ]
+            },
+            {
+              "claim_id": "orb_phase",
+              "text": "Орбис — 0.6824°, допустимый — 5°. Фаза — неизвестна.",
+              "basis_fact_ids": [
+                "transit.aspect"
+              ],
+              "basis_derivation_ids": [
+                "primary.synthesis"
+              ]
+            },
+            {
+              "claim_id": "pair",
+              "text": "В натальной карте между этими планетами есть связь: тригон. По методике активируется существующая натальная связь; усиление напряжения этим правилом не установлено.",
+              "basis_fact_ids": [
+                "natal.pair",
+                "transit.aspect"
+              ],
+              "basis_derivation_ids": [
+                "primary.natal_pair",
+                "primary.natal_reinforcement"
+              ]
+            }
+          ]
+        },
+        {
+          "event_ref": "T5",
+          "analysis_id": "analysis_1ec0acfc0c8489e62986ebea",
+          "claims": [
+            {
+              "claim_id": "event",
+              "text": "Транзитная планета: Венера; принимающая натальная планета: Луна; аспект: секстиль.",
+              "basis_fact_ids": [
+                "transit.planet",
+                "natal.receiver",
+                "transit.aspect"
+              ],
+              "basis_derivation_ids": [
+                "primary.event"
+              ]
+            },
+            {
+              "claim_id": "positions",
+              "text": "Положение транзитной планеты: знак Козерог, натальный дом — 10; знак куспида этого дома — Козерог. Положение принимающей натальной планеты: знак Скорпион, дом — 8.",
+              "basis_fact_ids": [
+                "transit.sign",
+                "transit.natal_house",
+                "natal.cusp_sign",
+                "natal.receiver_sign",
+                "natal.receiver_house"
+              ],
+              "basis_derivation_ids": [
+                "primary.transit_sign",
+                "primary.receiver",
+                "projection.transit_house"
+              ]
+            },
+            {
+              "claim_id": "nature",
+              "text": "Качества аспекта в опубликованной методике: интеллект, коммуникация, возможность. Они не предопределяют исход событий.",
+              "basis_fact_ids": [
+                "transit.aspect"
+              ],
+              "basis_derivation_ids": [
+                "primary.aspect_nature"
+              ]
+            },
+            {
+              "claim_id": "orb_phase",
+              "text": "Орбис — 3.4881°, допустимый — 5°. Фаза — неизвестна.",
+              "basis_fact_ids": [
+                "transit.aspect"
+              ],
+              "basis_derivation_ids": [
+                "primary.synthesis"
+              ]
+            },
+            {
+              "claim_id": "pair",
+              "text": "В проверенном наборе натальных аспектов и орбисов связь этих планет отсутствует. Это не означает, что транзит слабее, мягче или новее. Основания говорить об активации существующей натальной связи нет.",
+              "basis_fact_ids": [
+                "natal.pair",
+                "transit.aspect"
+              ],
+              "basis_derivation_ids": [
+                "primary.natal_pair",
+                "primary.natal_reinforcement"
+              ]
+            }
+          ]
+        }
+      ],
+      "groups": [
+        {
+          "group_id": "G1",
+          "kind": "shared_natal_receiver",
+          "key": "moon",
+          "event_refs": [
+            "T2",
+            "T3",
+            "T5"
+          ],
+          "claims": [
+            {
+              "claim_id": "group",
+              "text": "Общая принимающая натальная планета — Луна. Эти аспекты рассматриваются вместе по этому признаку; это не оценка их важности.",
+              "basis_fact_ids": [],
+              "basis_derivation_ids": []
+            }
+          ]
+        },
+        {
+          "group_id": "G2",
+          "kind": "shared_transit_house",
+          "key": "10",
+          "event_refs": [
+            "T2",
+            "T3",
+            "T4",
+            "T5"
+          ],
+          "claims": [
+            {
+              "claim_id": "group",
+              "text": "Общий натальный дом, по которому идут транзитные планеты, — 10. Эти аспекты рассматриваются вместе по этому признаку; это не оценка их важности.",
+              "basis_fact_ids": [],
+              "basis_derivation_ids": []
+            }
+          ]
+        },
+        {
+          "group_id": "G3",
+          "kind": "shared_transit_planet",
+          "key": "sun",
+          "event_refs": [
+            "T3",
+            "T4"
+          ],
+          "claims": [
+            {
+              "claim_id": "group",
+              "text": "Общая транзитная планета — Солнце. Эти аспекты рассматриваются вместе по этому признаку; это не оценка их важности.",
+              "basis_fact_ids": [],
+              "basis_derivation_ids": []
+            }
+          ]
+        }
+      ],
+      "limitations": [
+        {
+          "claim_id": "selected_scope",
+          "text": "Это обзор выбранных аспектов на один момент, а не всех транзитов и не всей методики книги.",
+          "basis_fact_ids": [],
+          "basis_derivation_ids": []
+        },
+        {
+          "claim_id": "no_rank",
+          "text": "Порядок изложения не означает силу или важность. Веса, главная тема и взаимное погашение аспектов не определялись.",
+          "basis_fact_ids": [],
+          "basis_derivation_ids": []
+        },
+        {
+          "claim_id": "timing",
+          "text": "Даты точности, пики и длительность здесь не рассчитываются; события не объявляются неизбежными.",
+          "basis_fact_ids": [],
+          "basis_derivation_ids": []
+        },
+        {
+          "claim_id": "interpretation_scope",
+          "text": "В этом профиле пока нет полного словаря жизненных толкований планет, знаков и домов. Их значения не достраиваются моделью.",
+          "basis_fact_ids": [],
+          "basis_derivation_ids": []
+        },
+        {
+          "claim_id": "warning.ASPECT_PHASE_UNKNOWN",
+          "text": "Фаза аспекта не передана; одного положения недостаточно для её определения. Аспекты: T1, T2, T3, T4, T5.",
+          "basis_fact_ids": [],
+          "basis_derivation_ids": []
+        }
+      ],
+      "catalogue_hash": "a5b70504429cd9d064af8440a53b6e205eebae74e1316d104578267b443f204f"
+    },
+    "aggregate_id": "aggregate_309400e5e39f0df500c9b387",
+    "aggregate_hash": "7306dc39d5148c79ce247ca539e072871c38d7501f1419e23f41a156d6dcb353"
   },
-  "aggregate_hash": "d58771678d71ec7999d10c43a5302f9a36aebeec146af214f5c8d388e6ebdf53"
+  "aggregate_hash": "7306dc39d5148c79ce247ca539e072871c38d7501f1419e23f41a156d6dcb353"
 }

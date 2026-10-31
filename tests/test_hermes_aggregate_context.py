@@ -35,16 +35,16 @@ class AggregateContextTests(unittest.TestCase):
         self.assertEqual(guard.receipt['group_count'], 3)
         self.assertEqual(guard.receipt['aggregate_hash'], value['aggregate_hash'])
         self.assertEqual(guard.receipt['response_hash'], value['aggregate']['source']['response_hash'])
-        self.assertEqual(guard.receipt['prompt_contract_version'], 'sakoian_aggregate_v1')
+        self.assertEqual(guard.receipt['prompt_contract_version'], 'sakoian_aggregate_grounded_v1')
         self.assertFalse(guard.receipt['external_tools_used']); self.assertFalse(guard.receipt['shared_memory_used'])
         self.assertNotIn('"analyses":', guard.prompt)
-        self.assertNotIn('"evidence_refs":', guard.prompt)
-        self.assertLess(len(guard.prompt.encode()), 18000)
+        self.assertEqual(guard.narrative_catalogue, value['aggregate']['narrative_catalogue'])
+        self.assertLess(len(guard.prompt.encode()), 60000)
         for event in value['aggregate']['projection']['events']:
             self.assertIn(event['analysis_id'], guard.prompt)
 
     def test_mutated_semantics_rejected_even_when_rehashed(self):
-        for case in ('extra','aggregate_identity','member_identity','coverage','projection','source','method','duplicate','order'):
+        for case in ('extra','aggregate_identity','member_identity','coverage','projection','source','method','duplicate','order','catalogue'):
             with self.subTest(case=case):
                 value=aggregate_fixture(); a=value['aggregate']
                 if case=='extra': a['extra']='no'
@@ -54,6 +54,7 @@ class AggregateContextTests(unittest.TestCase):
                 elif case=='projection': a['projection']['groups']=[]
                 elif case=='source': a['source']['response_hash']='f'*64
                 elif case=='method': a['method_ref']['package_hash']='0'*64
+                elif case=='catalogue': a['narrative_catalogue']['events'][0]['claims'][0]['text']='wrong natal receiver'
                 elif case=='duplicate': a['analyses'][1]=copy.deepcopy(a['analyses'][0]);a['projection']=project(a['analyses'])
                 else: a['analyses'].reverse()
                 reseal(value)
@@ -92,7 +93,8 @@ class AggregateContextTests(unittest.TestCase):
         guard=self.prepare(value)
         self.assertNotIn('self_return',guard.prompt)
         self.assertNotIn('shared_facts',guard.prompt)
-        self.assertIn('НЕ натальное усиление',guard.prompt)
+        self.assertIn('Верни только JSON-план',guard.prompt)
+        self.assertEqual(guard.receipt['narrative_catalogue_hash'],a['narrative_catalogue']['catalogue_hash'])
         self.assertEqual(len(projection['natal_planets']),3)
 
     def test_vendored_projection_and_schema_are_present(self):
