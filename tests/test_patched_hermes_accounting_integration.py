@@ -81,10 +81,14 @@ class PatchedHermesAccountingIntegrationTests(unittest.TestCase):
         adapter._api_key = "gateway-token"
         adapter._model_name = "test/model"
         adapter._create_agent = lambda **kwargs: agent
-        with patch("gateway.platforms.api_server.durable_begin_request",
-                   return_value={"state": "received"}), \
-             patch("gateway.platforms.api_server.durable_complete_request"):
+        with tempfile.TemporaryDirectory() as journal_dir, patch.dict(os.environ,
+                {"HERMES_ACCOUNTING_JOURNAL_PATH": str(Path(journal_dir)/"accounting.sqlite")}):
             response = asyncio.run(adapter._handle_chat_completions(Request()))
+            replay = asyncio.run(adapter._handle_chat_completions(Request()))
+            self.assertEqual(response.status, replay.status)
+            import sqlite3
+            with sqlite3.connect(Path(journal_dir)/"accounting.sqlite") as db:
+                self.assertEqual(db.execute("SELECT count(*) FROM accounting_generation").fetchone()[0],1)
         self.assertEqual(response.status, 200)
         body = json.loads(response.text)
         receipt = body["tp_analysis_execution"]
@@ -126,11 +130,17 @@ class PatchedHermesAccountingIntegrationTests(unittest.TestCase):
         adapter = object.__new__(APIServerAdapter)
         adapter._api_key = "gateway-token"; adapter._model_name = "test/model"
         adapter._create_agent = lambda **kwargs: agent
-        with patch("gateway.platforms.api_server.durable_begin_request", return_value={"state":"received"}), \
-             patch("gateway.platforms.api_server.durable_complete_request"):
+        with tempfile.TemporaryDirectory() as journal_dir, patch.dict(os.environ,
+                {"HERMES_ACCOUNTING_JOURNAL_PATH": str(Path(journal_dir)/"accounting.sqlite")}):
             response = asyncio.run(adapter._handle_chat_completions(Request()))
-        self.assertEqual(response.status, 200)
-        self.assertFalse(json.loads(response.text)["choices"][0]["finish_reason"] == "stop")
+            replay = asyncio.run(adapter._handle_chat_completions(Request()))
+            self.assertEqual(response.status, replay.status)
+            import sqlite3
+            with sqlite3.connect(Path(journal_dir)/"accounting.sqlite") as db:
+                self.assertEqual(db.execute("SELECT count(*) FROM accounting_generation").fetchone()[0],1)
+        body = json.loads(response.text)
+        self.assertTrue(response.status != 200 or body.get("hermes", {}).get("completed") is False)
+        self.assertEqual(response.headers["X-Hermes-Completed"], "false")
         self.assertEqual(client.chat.completions.create.call_count, 1)
 
     def test_sakoian_context_rejects_mixed_context_before_agent(self) -> None:
