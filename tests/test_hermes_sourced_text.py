@@ -54,3 +54,20 @@ class InterpretationFactsModeTests(unittest.TestCase):
             strict_context_execution_mode(body)
         body["messages"][1]["content"] = "я" * 30000
         self.assertEqual(strict_context_execution_mode(body), "interpretation_facts_v1")
+
+    def test_versioned_budget_contracts_and_malformed_v2(self):
+        body = {**self.body(), "tp_answer_format": "hermes_managed_v1"}
+        for contract in ({"contract": "hermes-context-budget-v1"},
+                         {"contract": "hermes-context-budget-v2", "completionTokens": 32768}):
+            with self.subTest(contract=contract):
+                self.assertEqual(strict_context_execution_mode({**body, "tp_context_budget": contract}),
+                                 "interpretation_facts_v1")
+        for contract in ({"contract": "hermes-context-budget-v2"},
+                         {"contract": "hermes-context-budget-v2", "completionTokens": 8192},
+                         {"contract": "hermes-context-budget-v2", "completionTokens": 32768.0},
+                         {"contract": "hermes-context-budget-v3", "completionTokens": 32768}):
+            with self.subTest(contract=contract), self.assertRaisesRegex(ValueError, "Invalid token-budget contract"):
+                strict_context_execution_mode({**body, "tp_context_budget": contract})
+        with self.assertRaisesRegex(ValueError, "Invalid token-budget contract"):
+            strict_context_execution_mode({**body, "tp_execution_mode": "sourced_text_v1",
+                "tp_context_budget": {"contract": "hermes-context-budget-v2", "completionTokens": 32768}})

@@ -21,7 +21,10 @@ def strict_context_execution_mode(body):
             raise ValueError("Sourced text requires plain text")
     budget = body.get("tp_context_budget")
     if budget is not None:
-        if (not isinstance(budget, dict) or budget.get("contract") != "hermes-context-budget-v1" or
+        if (not isinstance(budget, dict) or
+                budget.get("contract") not in ("hermes-context-budget-v1", "hermes-context-budget-v2") or
+                (budget.get("contract") == "hermes-context-budget-v2" and
+                 (type(budget.get("completionTokens")) is not int or budget["completionTokens"] != 32768)) or
                 mode != "interpretation_facts_v1" or body.get("tp_answer_format") != "hermes_managed_v1"):
             raise ValueError("Invalid token-budget contract")
         if sum(len(item["content"].encode("utf-8")) for item in messages) > 16 * 1024 * 1024:
