@@ -74,6 +74,19 @@ def runtime_environment():
 
 
 class HermesOpenRouterAccountingTests(unittest.TestCase):
+    def test_managed_attempt_log_is_request_scoped_and_excludes_content(self):
+        value=agent();value._tp_context_model_calls=1
+        value._tp_context_budget_body={"tp_attempt_reserve":{"requestId":"synthetic-req", "token":"secret-token"},
+            "messages":[{"content":"private prompt"}]}
+        result=response("gen-test", cost="0.01", input_tokens=20, output_tokens=10, reasoning=6)
+        result.choices=[ns(finish_reason="length",message=ns(content="private answer",reasoning="private thinking"))]
+        with patch("hermes_openrouter_accounting._record_durable_generation"), self.assertLogs("hermes_openrouter_accounting",level="INFO") as logs:
+            record_openrouter_response(value,result)
+        text=" ".join(logs.output)
+        self.assertIn("synthetic-req",text);self.assertIn("length",text);self.assertIn('"reasoning":6',text)
+        for secret in ("secret-token","private prompt","private answer","private thinking"):
+            self.assertNotIn(secret,text)
+
     def build(self, value, request_id: str = "chatcmpl-public"):
         with runtime_environment():
             return build_openrouter_accounting(value, request_id)

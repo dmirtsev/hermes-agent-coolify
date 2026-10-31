@@ -1,4 +1,5 @@
 import copy
+import io
 import json
 import unittest
 from types import SimpleNamespace
@@ -160,5 +161,20 @@ class AttemptReserveTests(unittest.TestCase):
             self.assertIsInstance(build.call_args.args[0],budget._NoRedirect)
         with patch.object(budget.urllib.request,'build_opener',return_value=SimpleNamespace(open=lambda *a,**k: (_ for _ in ()).throw(TimeoutError()))):
             with self.assertRaisesRegex(budget.ContextBudgetError,'unavailable'): budget._authorize_retry(self.descriptor,receipt,2)
+
+    def test_callback_distinguishes_insufficient_denial_and_unknown_errors(self):
+        receipt=admission(self.messages)
+        for status, payload, expected in (
+            (402, {"error":"hermes_attempt_reserve_insufficient"}, "hermes_attempt_reserve_insufficient"),
+            (409, {"error":"hermes_attempt_reserve_denied"}, "hermes_attempt_reserve_denied"),
+            (402, {"error":"other"}, "hermes_attempt_reserve_invalid"),
+            (401, {"error":"hermes_attempt_reserve_denied"}, "hermes_attempt_reserve_invalid"),
+            (503, {}, "hermes_attempt_reserve_unavailable"),
+        ):
+            error=budget.urllib.error.HTTPError('https://test.invalid',status,'',{},io.BytesIO(json.dumps(payload).encode()))
+            opener=SimpleNamespace(open=lambda *a, **k: (_ for _ in ()).throw(error))
+            with self.subTest(status=status, payload=payload), patch.object(budget.urllib.request,'build_opener',return_value=opener):
+                with self.assertRaisesRegex(budget.ContextBudgetError, '^'+expected+'$'):
+                    budget._authorize_retry(self.descriptor,receipt,2)
 
 if __name__ == '__main__': unittest.main()

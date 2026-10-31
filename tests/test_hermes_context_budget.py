@@ -1,7 +1,10 @@
 import copy
+import hashlib
 import json
 import os
+import tempfile
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -76,6 +79,52 @@ def mutate_user(value, mutate):
 
 
 class ContextBudgetTests(unittest.TestCase):
+    def test_attempt_issue_log_has_scoped_id_and_allowlisted_codes_only(self):
+        agent=SimpleNamespace(_tp_context_budget_body={'tp_attempt_reserve':{'requestId':'synthetic-req','token':'private-token'}},
+                              _tp_context_model_calls=2)
+        with self.assertLogs('hermes_context_budget',level='INFO') as logs:
+            budget._log_managed_attempt(agent,'validation_retry',issues=['unmarked_native_motion','private user prose'])
+        text=' '.join(logs.output)
+        self.assertIn('synthetic-req',text);self.assertIn('unmarked_native_motion',text)
+        self.assertNotIn('private user prose',text);self.assertNotIn('private-token',text)
+
+    def test_medium_reasoning_is_versioned_frozen_and_requires_separate_certificate(self):
+        value=v2_body();value["tp_context_budget"].update(contract=budget.CONTRACT_V2,completionTokens=32768)
+        value["tp_reasoning_profile"]=budget.MEDIUM_REASONING_PROFILE
+        self.assertNotEqual(budget.digest(value),budget.digest({k:v for k,v in value.items() if k != "tp_reasoning_profile"}))
+        with self.assertRaisesRegex(budget.ContextBudgetError, "hermes_reasoning_profile_uncertified"):
+            budget.prepare_admission(value, PROFILE, lambda *a, **kw: 100)
+        candidate=copy.deepcopy(PROFILE)
+        candidate[MODEL]["reasoningProfiles"]={budget.MEDIUM_REASONING_PROFILE: {
+            **PROFILE[MODEL], "reasoningEffort":"medium", "evidenceFile":"synthetic.json",
+            "counterRevision":"medium-synthetic-v1", "framingUpperCorrection": 2}}
+        seen=[]
+        receipt=budget.prepare_admission(value,candidate,lambda *a,**kw: seen.append(kw) or 100)
+        self.assertEqual(seen,[{"reasoning_effort":"medium"}])
+        self.assertEqual(receipt["counterRevision"],"medium-synthetic-v1")
+        self.assertEqual(receipt["inputTokens"],102)
+        self.assertTrue(receipt["admitted"])
+        candidate[MODEL]["reasoningProfiles"][budget.MEDIUM_REASONING_PROFILE]["counterRevision"]=PROFILE[MODEL]["counterRevision"]
+        with self.assertRaisesRegex(budget.ContextBudgetError, "hermes_reasoning_profile_uncertified"):
+            budget.prepare_admission(value,candidate,lambda *a,**kw:100)
+        value["tp_context_budget"]["contract"]=budget.CONTRACT
+        with self.assertRaisesRegex(budget.ContextBudgetError, "hermes_reasoning_profile_invalid"):
+            budget.prepare_admission(value,candidate,lambda *a,**kw:100)
+
+    def test_medium_certificate_requires_own_exact_evidence_hash(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path=Path(temp);(path/'high.json').write_bytes(b'high');(path/'medium.json').write_bytes(b'medium')
+            high=hashlib.sha256(b'high').hexdigest();medium=hashlib.sha256(b'medium').hexdigest()
+            (path/'routes.json').write_text(json.dumps({MODEL:{'evidenceFile':'high.json','evidenceSha256':high,
+                'reasoningProfiles':{budget.MEDIUM_REASONING_PROFILE:{'evidenceFile':'medium.json','evidenceSha256':medium}}}}))
+            with patch.object(budget,'CERTIFICATES',path/'routes.json'):
+                budget._load_certificates.cache_clear();budget._load_certificates()
+                (path/'medium.json').write_bytes(b'tampered')
+                budget._load_certificates.cache_clear()
+                with self.assertRaisesRegex(budget.ContextBudgetError,'hermes_counter_evidence_mismatch'):
+                    budget._load_certificates()
+            budget._load_certificates.cache_clear()
+
     def test_period_facts_v2_is_lossless_and_version_checked(self):
         packed = {"format": "period_facts_v2", "encoding": "period_lossless_v2",
                   "layouts": [["id", "exact_times"]],
