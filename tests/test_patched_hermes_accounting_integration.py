@@ -43,6 +43,7 @@ class PatchedHermesAccountingIntegrationTests(unittest.TestCase):
                     strict_context_only=True,sakoian_single_call=True))
                 self.assertEqual(result['completed'],finish=='stop')
                 self.assertEqual(result['api_calls'],1)
+                self.assertEqual((usage['input_tokens'],usage['output_tokens'],usage['total_tokens']),(10,5,15))
                 self.assertEqual(client.chat.completions.create.call_count,1)
                 client.with_options.assert_called_once_with(max_retries=0,timeout=90)
                 self.assertEqual(client.chat.completions.create.call_args.kwargs['max_tokens'],4096)

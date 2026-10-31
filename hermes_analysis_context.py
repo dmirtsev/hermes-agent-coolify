@@ -139,9 +139,18 @@ def narrate_sakoian_once(agent, user_message, system_prompt):
     if agent.provider != 'openrouter' or agent.model != 'deepseek/deepseek-v4-flash':
         raise SakoianContextError('Sakoian test narration requires the approved economy route')
     try:
-        from agent.openrouter_accounting import record_openrouter_response, record_openrouter_unresolved_attempt
+        from agent.openrouter_accounting import record_openrouter_response, record_openrouter_unresolved_attempt, extract_openrouter_generation
     except ImportError:  # Local contract tests.
-        from hermes_openrouter_accounting import record_openrouter_response, record_openrouter_unresolved_attempt
+        from hermes_openrouter_accounting import record_openrouter_response, record_openrouter_unresolved_attempt, extract_openrouter_generation
+    if __package__:
+        from .dialogue_models import PROFILES
+    else:
+        from hermes_dialogue_models import PROFILES
+    profile = PROFILES['deepseek_flash']
+    if agent.model != profile['model']:
+        raise SakoianContextError('Sakoian provider profile differs from approved model')
+    provider_policy = {'only':list(profile['providers']), 'order':list(profile['providers']),
+                       'max_price':dict(profile['max_price']), 'allow_fallbacks':False}
     client = agent._ensure_primary_openai_client(reason='sakoian_single_narration')
     client = client.with_options(max_retries=0, timeout=90)
     try:
@@ -150,12 +159,17 @@ def narrate_sakoian_once(agent, user_message, system_prompt):
             messages=[{'role':'system','content':system_prompt}, {'role':'user','content':user_message}],
             max_tokens=4096, stream=False,
             extra_headers={'X-OpenRouter-Metadata':'enabled'},
-            extra_body={'reasoning':{'enabled':False}, 'provider':{'allow_fallbacks':False}},
+            extra_body={'reasoning':{'enabled':False}, 'provider':provider_policy, 'service_tier':'default'},
         )
     except Exception:
         record_openrouter_unresolved_attempt(agent, 'sakoian_single_attempt_failed')
         raise
     record_openrouter_response(agent, response)
+    tokens = extract_openrouter_generation(response)['tokens']
+    for attr, field in [('session_prompt_tokens','input'), ('session_completion_tokens','output'),
+                        ('session_total_tokens','total'), ('session_cache_read_tokens','cache_read'),
+                        ('session_cache_write_tokens','cache_write'), ('session_reasoning_tokens','reasoning')]:
+        setattr(agent, attr, tokens[field])
     try:
         choice = response.choices[0]
         text = choice.message.content
