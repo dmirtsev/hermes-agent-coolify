@@ -88,7 +88,7 @@ class PatchedHermesAccountingIntegrationTests(unittest.TestCase):
             self.assertEqual(response.status, replay.status)
             import sqlite3
             with sqlite3.connect(Path(journal_dir)/"accounting.sqlite") as db:
-                self.assertEqual(db.execute("SELECT count(*) FROM accounting_generation").fetchone()[0],1)
+                self.assertEqual(db.execute("SELECT count(*) FROM accounting_evidence_event WHERE kind=?", ("generation",)).fetchone()[0],1)
         self.assertEqual(response.status, 200)
         body = json.loads(response.text)
         receipt = body["tp_analysis_execution"]
@@ -137,7 +137,7 @@ class PatchedHermesAccountingIntegrationTests(unittest.TestCase):
             self.assertEqual(response.status, replay.status)
             import sqlite3
             with sqlite3.connect(Path(journal_dir)/"accounting.sqlite") as db:
-                self.assertEqual(db.execute("SELECT count(*) FROM accounting_generation").fetchone()[0],1)
+                self.assertEqual(db.execute("SELECT count(*) FROM accounting_evidence_event WHERE kind=?", ("generation",)).fetchone()[0],1)
         body = json.loads(response.text)
         self.assertTrue(response.status != 200 or body.get("hermes", {}).get("completed") is False)
         self.assertEqual(response.headers["X-Hermes-Completed"], "false")
