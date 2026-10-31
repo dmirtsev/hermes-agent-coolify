@@ -2,7 +2,7 @@
   "type": "object",
   "properties": {
     "schema_version": {
-      "const": "tp-astro-analysis.aggregate-result.v1"
+      "const": "tp-astro-analysis.aggregate-result.v2"
     },
     "aggregate_id": {
       "type": "string",
@@ -193,6 +193,245 @@
         "partial_count"
       ],
       "additionalProperties": false
+    },
+    "narrative_catalogue": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": "tp-astro-analysis.narrative-catalogue.v1"
+        },
+        "catalogue_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "event_ref": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "analysis_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "claims": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "claim_id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 4096
+                    },
+                    "text": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 4096
+                    },
+                    "basis_fact_ids": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 4096
+                      },
+                      "minItems": 0,
+                      "maxItems": 100,
+                      "uniqueItems": true
+                    },
+                    "basis_derivation_ids": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 4096
+                      },
+                      "minItems": 0,
+                      "maxItems": 100,
+                      "uniqueItems": true
+                    }
+                  },
+                  "required": [
+                    "claim_id",
+                    "text",
+                    "basis_fact_ids",
+                    "basis_derivation_ids"
+                  ],
+                  "additionalProperties": false
+                },
+                "minItems": 1,
+                "maxItems": 20
+              }
+            },
+            "required": [
+              "event_ref",
+              "analysis_id",
+              "claims"
+            ],
+            "additionalProperties": false
+          },
+          "minItems": 2,
+          "maxItems": 24
+        },
+        "groups": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "group_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "kind": {
+                "enum": [
+                  "shared_natal_receiver",
+                  "shared_transit_planet",
+                  "shared_transit_house"
+                ]
+              },
+              "key": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "event_refs": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                "minItems": 2,
+                "maxItems": 24,
+                "uniqueItems": true
+              },
+              "claims": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "claim_id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 4096
+                    },
+                    "text": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 4096
+                    },
+                    "basis_fact_ids": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 4096
+                      },
+                      "minItems": 0,
+                      "maxItems": 100,
+                      "uniqueItems": true
+                    },
+                    "basis_derivation_ids": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 4096
+                      },
+                      "minItems": 0,
+                      "maxItems": 100,
+                      "uniqueItems": true
+                    }
+                  },
+                  "required": [
+                    "claim_id",
+                    "text",
+                    "basis_fact_ids",
+                    "basis_derivation_ids"
+                  ],
+                  "additionalProperties": false
+                },
+                "minItems": 1,
+                "maxItems": 20
+              }
+            },
+            "required": [
+              "group_id",
+              "kind",
+              "key",
+              "event_refs",
+              "claims"
+            ],
+            "additionalProperties": false
+          },
+          "minItems": 0,
+          "maxItems": 36
+        },
+        "limitations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "claim_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "text": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "basis_fact_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                "minItems": 0,
+                "maxItems": 100,
+                "uniqueItems": true
+              },
+              "basis_derivation_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                "minItems": 0,
+                "maxItems": 100,
+                "uniqueItems": true
+              }
+            },
+            "required": [
+              "claim_id",
+              "text",
+              "basis_fact_ids",
+              "basis_derivation_ids"
+            ],
+            "additionalProperties": false
+          },
+          "minItems": 1,
+          "maxItems": 30
+        }
+      },
+      "required": [
+        "schema_version",
+        "catalogue_hash",
+        "events",
+        "groups",
+        "limitations"
+      ],
+      "additionalProperties": false
     }
   },
   "required": [
@@ -207,7 +446,8 @@
     "source",
     "analyses",
     "projection",
-    "coverage"
+    "coverage",
+    "narrative_catalogue"
   ],
   "additionalProperties": false,
   "$schema": "https://json-schema.org/draft/2020-12/schema",

@@ -36,6 +36,7 @@ COPY hermes_versioned_methods.py /opt/hermes/agent/versioned_methods.py
 COPY hermes_sourced_text.py /opt/hermes/agent/sourced_text.py
 COPY hermes_analysis_context.py /opt/hermes/agent/sakoian_analysis_context.py
 COPY aggregate_projection.py /opt/hermes/agent/aggregate_projection.py
+COPY grounded_narrative.py /opt/hermes/agent/grounded_narrative.py
 COPY hermes_sakoian_manifest.json /opt/hermes/agent/sakoian_analysis_manifest.json
 COPY hermes_sakoian_aggregate.schema.json /opt/hermes/agent/hermes_sakoian_aggregate.schema.json
 COPY hermes_sakoian_result.schema.json /opt/hermes/agent/hermes_sakoian_result.schema.json

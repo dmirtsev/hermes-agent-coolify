@@ -7,7 +7,7 @@ private SSH-only analysis service before this gateway is called.
 
 Exact pinned Knowledge family `sakoian_transit_analysis_core` 0.3.0 and executor
 package hash are in `hermes_sakoian_manifest.json`. The vendored result schema
-matches tp-astro-analysis 0.6.0. The validator checks identity, five factor
+matches tp-astro-analysis 0.7.0. The validator checks identity, five factor
 ordering, coverage, fact/derivation links, Core release and immutable pins.
 Hashes are integrity evidence, not digital signatures or user authorization.
 
@@ -17,7 +17,7 @@ A durable Idempotency-Key matching request_id is required. The response includes
 `present`, `absent`, `unknown`, and `not_applicable` remain distinct.
 The single context covers five factors of one selected transit, not the full book.
 
-The aggregate candidate adds a separate `tp-astro-analysis.hermes-aggregate.v1`
+The aggregate candidate adds a separate `tp-astro-analysis.hermes-aggregate.v2`
 context. It validates every included single-transit result with the existing
 gate, requires two to 24 results with one shared identity and release pin, and
 uses one bounded Hermes call. Grouping is deterministic and structural; the
@@ -44,3 +44,27 @@ unchanged. Same-planet aspects are called same_planet_transit in narration data;
 the persisted legacy activation code is not exposed to the model. This is a
 readability correction, not a claim that prompt instructions prove prose accuracy.
 A new live quality check needs a separate explicitly authorized generation.
+
+
+## Grounded aggregate narration
+
+The v2 aggregate contains an executor-generated Russian narrative catalogue,
+bound by the aggregate digest and exact package pin. Hermes recomputes it
+before dispatch. The model returns only a strict JSON ordering plan containing
+all group IDs and all event IDs exactly once, with the exact catalogue hash.
+Unknown IDs, omissions, duplicates, free-text fields, invalid JSON or truncation
+fail closed. There is no semantic regex classifier for arbitrary prose.
+
+The gateway renders verified facts, method qualities and limitations itself.
+`tp_analysis_validation` records the accepted plan and rendered text digest;
+the executor client independently renders the same plan and requires exact
+text equality. Failed provider text is suppressed; billing evidence remains
+recorded and durable replay must not generate another attempt. No silent
+fallback to a default plan. Single-aspect narration remains the older contract.
+
+The source of facts and derivations remains the authenticated trusted operator
+bridge and pinned executor, not a signature or a proof of astrological truth.
+This stage provides a controlled account of existing method facts and qualities;
+it does not add a new life-interpretation dictionary or validate arbitrary prose.
+New live paid model calls require a separate explicit grant. Automated runtime
+checks use a fake SDK and an isolated real temporary accounting journal.
