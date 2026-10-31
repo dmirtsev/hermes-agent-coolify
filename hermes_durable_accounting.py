@@ -1132,17 +1132,37 @@ def _safe_request_view(request_key: str, *, include_events: bool = True) -> dict
     }
     # Only expose a narrow, non-sensitive conclusion. Keep the result text,
     # messages and validator feedback private, and never infer provider cost.
-    managed_failures = {"managed_transit_validation_exhausted", "managed_transit_validation_unavailable"}
+    managed_failures = {"managed_transit_validation_exhausted", "managed_transit_validation_unavailable",
+                        "hermes_attempt_reserve_denied", "hermes_attempt_reserve_unavailable"}
     if (row["state"] == "completed" and isinstance(stored_result, dict)
             and stored_result.get("failed") is True
             and stored_result.get("completed") is False
             and stored_result.get("final_response") == ""
             and isinstance(stored_result.get("error"), str)
-            and stored_result["error"] in managed_failures):
+            and stored_result["error"] in managed_failures
+            and not any(event["kind"] == "unresolved" for event in events)
+            and (not stored_result["error"].startswith("hermes_attempt_reserve_")
+                 or (isinstance(accounting, dict) and isinstance(accounting.get("generations"), list)
+                     and bool(accounting["generations"])
+                     and all(isinstance(g, dict) and isinstance(g.get("cost"), dict)
+                             and g["cost"].get("status") == "actual" for g in accounting["generations"])) )):
         result["terminal_outcome"] = {
             "code": stored_result["error"],
             "answer_available": False,
         }
+    # These codes mean the provider dispatch/cost cannot safely be decided.
+    # They are diagnostic only: callers must block, never infer a refund.
+    ambiguous_reservation_errors = {"hermes_attempt_reserve_previous_attempt_unknown",
+                                    "hermes_attempt_reserve_accounting_unavailable",
+                                    "hermes_attempt_reserve_invalid"}
+    if (row["state"] == "completed" and isinstance(stored_result, dict)
+            and stored_result.get("failed") is True
+            and stored_result.get("completed") is False
+            and stored_result.get("final_response") == ""
+            and isinstance(stored_result.get("error"), str)
+            and stored_result.get("error") in ambiguous_reservation_errors):
+        result["terminal_outcome"] = {"code": stored_result["error"],
+                                      "answer_available": False, "dispatch_state": "unknown"}
     if provider_rejected_unbilled:
         result["terminal_outcome"] = {
             "code": PROVIDER_TEMPORARILY_UNAVAILABLE,
