@@ -68,3 +68,38 @@ This stage provides a controlled account of existing method facts and qualities;
 it does not add a new life-interpretation dictionary or validate arbitrary prose.
 New live paid model calls require a separate explicit grant. Automated runtime
 checks use a fake SDK and an isolated real temporary accounting journal.
+
+## Private rejection diagnostics
+
+Rejected aggregate plans are captured before their text is cleared. The record
+contains the exact received text, its byte count and SHA-256, the request and
+generation IDs, accounting payload hash, expected plan, completion metadata,
+and a structured rejection reason. JSON failures include line/column/offset;
+contract failures identify the field and expected/actual values or missing,
+unknown and repeated IDs. This second-pass diagnosis cannot accept a plan.
+
+The private SQLite sidecar is below the accounting journal's durable parent,
+in `.hermes-sakoian-diagnostics/` (0700), with one 0600 database per journal.
+It uses DELETE journaling and synchronous FULL. No migration of billing tables
+or new secret is required. Existing accounting generation evidence must match
+before a record is saved. A conflicting second capture cannot overwrite it.
+The maximum retained raw text is 1 MiB; larger responses are explicitly marked
+truncated, with the full original digest and byte count still recorded.
+
+On rejection, `tp_analysis_validation` adds `reason_code`, `reason_path`,
+`diagnostic_status` and, only when saved, `diagnostic_id`. Arbitrary model text,
+expected/actual values and private details do not enter the HTTP response or
+billing result. A failed sidecar write reports `diagnostic_status=unavailable`
+and a safe error code; the rejection and generation accounting remain durable.
+The two journals are separate transactions: this visible failure is deliberate,
+not a claim of atomic capture with billing. There is no automatic paid retry.
+
+An operator can read a record over the existing protected server access using
+`agent.sakoian_diagnostics.read_rejection(request_key)`. The default returns safe
+metadata. Explicit `include_plan=True` returns the private raw plan, exact reason,
+completion metadata and expected plan. Do not copy this output into public logs,
+issues or shared reports. There is no HTTP diagnostics endpoint or auto-deletion.
+
+Captures apply to new rejected requests. Old failures whose text was discarded
+cannot be reconstructed; replay of those requests never launches a new model
+call. Valid plans and the legacy single-aspect route keep their existing contract.

@@ -306,7 +306,8 @@ def narrate_sakoian_once(agent, user_message, system_prompt, *, catalogue=None):
         record_openrouter_unresolved_attempt(agent, 'sakoian_single_attempt_failed')
         raise
     record_openrouter_response(agent, response)
-    tokens = extract_openrouter_generation(response)['tokens']
+    generation = extract_openrouter_generation(response)
+    tokens = generation['tokens']
     for attr, field in [('session_prompt_tokens','input'), ('session_completion_tokens','output'),
                         ('session_total_tokens','total'), ('session_cache_read_tokens','cache_read'),
                         ('session_cache_write_tokens','cache_write'), ('session_reasoning_tokens','reasoning')]:
@@ -323,21 +324,62 @@ def narrate_sakoian_once(agent, user_message, system_prompt, *, catalogue=None):
     error = None if complete else 'sakoian_narration_incomplete'
     if catalogue is not None:
         if __package__:
-            from .grounded_narrative import parse_plan, render_plan
+            from .grounded_narrative import parse_plan, render_plan, default_plan
+            from .sakoian_rejection import diagnose_plan
+            from .sakoian_diagnostics import save_rejection, DiagnosticsError
+            from .durable_accounting import request_key_for_agent
         else:
-            from grounded_narrative import parse_plan, render_plan
+            from grounded_narrative import parse_plan, render_plan, default_plan
+            from hermes_sakoian_rejection import diagnose_plan
+            from hermes_sakoian_diagnostics import save_rejection, DiagnosticsError
+            from hermes_durable_accounting import request_key_for_agent
+        raw_text = text
+        reason = None
+        # Keep provider content out of the public/accounting result. This small
+        # envelope is private diagnostics, not another interpretation attempt.
+        choices = getattr(response, 'choices', None)
+        choice_count = len(choices) if isinstance(choices, (list, tuple)) else None
+        first = choices[0] if choice_count else None
+        message = getattr(first, 'message', None)
+        finish = getattr(first, 'finish_reason', None)
+        completion = {'choice_count':choice_count,
+                      'finish_reason':finish if isinstance(finish, str) else None,
+                      'has_tool_calls':bool(getattr(message, 'tool_calls', None))}
+        if not complete:
+            code = ('completion_choice_count' if choice_count != 1 else
+                    'completion_finish_reason' if finish != 'stop' else
+                    'completion_tool_calls' if completion['has_tool_calls'] else
+                    'completion_content_type' if not isinstance(raw_text, str) else
+                    'completion_empty_content')
+            reason = {'code':code, 'path':'', 'details':completion}
         validation = {'status':'rejected', 'contract_version':'sakoian_grounded_v1',
                       'catalogue_hash':catalogue['catalogue_hash']}
         if complete:
+            stage = 'parse'
             try:
                 plan = parse_plan(text, catalogue)
+                stage = 'render'
                 text = render_plan(plan, catalogue)
                 validation.update(status='passed', plan=plan,
                     rendered_text_hash=hashlib.sha256(text.encode()).hexdigest())
-            except (ValueError, TypeError, KeyError, RecursionError):
+            except (ValueError, TypeError, KeyError, RecursionError) as exc:
                 complete = False
                 error = 'sakoian_narration_evidence_mismatch'
+                reason = (diagnose_plan(raw_text, catalogue) if stage == 'parse' else
+                          {'code':'plan_render_failed', 'path':'',
+                           'details':{'exception_type':type(exc).__name__}})
         if not complete:
+            validation.update(reason_code=reason['code'], reason_path=reason['path'])
+            try:
+                diagnostic_id = save_rejection(
+                    request_key=request_key_for_agent(agent), raw_text=raw_text,
+                    reason=reason, expected_plan=default_plan(catalogue),
+                    generation_id=generation['generation_id'], completion=completion)
+                validation.update(diagnostic_status='stored', diagnostic_id=diagnostic_id)
+            except DiagnosticsError as exc:
+                # A storage failure must be visible, without exposing the plan
+                # or turning a rejected result into an automatic paid retry.
+                validation.update(diagnostic_status='unavailable', diagnostic_error=exc.code)
             # Rejected provider prose is not a partial user answer. Usage and
             # generation evidence were recorded above and remain billable.
             text = ''
