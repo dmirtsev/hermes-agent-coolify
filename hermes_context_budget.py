@@ -31,6 +31,7 @@ CONTRACT = "hermes-context-budget-v1"
 CONTRACT_V2 = "hermes-context-budget-v2"
 OUTPUT_TOKENS_V2 = 32768
 OUTPUT_TOKENS = 8192
+MEDIUM_REASONING_PROFILE = "hermes-reasoning-medium-v1"
 PRICE_CAPS = {
     "openai/gpt-6-luna": {"prompt": 0.125, "completion": 0.5},
     "deepseek/deepseek-v4-flash": {"prompt": 0.1, "completion": 0.5},
@@ -63,6 +64,22 @@ class ContextBudgetError(ValueError):
 
 ATTEMPT_RESERVE_CONTRACT = "hermes-attempt-reserve-v1"
 _ATTEMPT_CALLBACK_TIMEOUT = 8.0
+
+
+def _log_managed_attempt(agent, event, *, issues=None):
+    body = getattr(agent, "_tp_context_budget_body", None)
+    descriptor = body.get("tp_attempt_reserve") if isinstance(body, dict) else None
+    request_id = descriptor.get("requestId") if isinstance(descriptor, dict) else None
+    if not isinstance(request_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,100}", request_id):
+        return
+    allowed = {"managed_json_invalid", "managed_structure_invalid", "managed_references_invalid",
+               "unprovided_day_segment", "unmarked_native_motion", "unmarked_native_precision",
+               "unmarked_interval_boundary", "unprovided_repeat_pass", "unmarked_native_calculation"}
+    safe_issues = sorted(set(issues or ()) & allowed)
+    logging.getLogger(__name__).info("managed_attempt %s", json.dumps({
+        "request_id": request_id, "event": event,
+        "attempt": getattr(agent, "_tp_context_model_calls", 0), "issues": safe_issues,
+    }, separators=(",", ":")))
 
 
 def _attempt_descriptor(body):
@@ -105,7 +122,18 @@ def _authorize_retry(descriptor, admission, attempt):
                 raise ContextBudgetError("hermes_attempt_reserve_denied")
             result = json.loads(response.read(65537).decode("utf-8"))
     except urllib.error.HTTPError as error:
-        code = "hermes_attempt_reserve_denied" if 300 <= error.code < 500 else "hermes_attempt_reserve_unavailable"
+        code = "hermes_attempt_reserve_unavailable"
+        if 300 <= error.code < 500:
+            code = "hermes_attempt_reserve_invalid"
+            try:
+                payload = json.loads(error.read(65537).decode("utf-8"))
+            except (ValueError, OSError, UnicodeError):
+                payload = None
+            received = payload.get("error") if isinstance(payload, dict) else None
+            if error.code == 402 and received == "hermes_attempt_reserve_insufficient":
+                code = "hermes_attempt_reserve_insufficient"
+            elif error.code == 409 and received == "hermes_attempt_reserve_denied":
+                code = "hermes_attempt_reserve_denied"
         raise ContextBudgetError(code) from None
     except (OSError, ValueError, urllib.error.URLError) as error:
         raise ContextBudgetError("hermes_attempt_reserve_unavailable") from error
@@ -113,7 +141,7 @@ def _authorize_retry(descriptor, admission, attempt):
             result.get("requestId") != descriptor["requestId"] or
             result.get("attempt") != attempt or
             result.get("messagesSha256") != admission.get("messagesSha256")):
-        raise ContextBudgetError("hermes_attempt_reserve_denied")
+        raise ContextBudgetError("hermes_attempt_reserve_unavailable")
 
 
 def _require_known_previous_attempt(descriptor, attempt):
@@ -167,7 +195,7 @@ def _deepseek_v41_encoder():
     return Tokenizer.from_file(str(ASSETS / "deepseek-v41-tokenizer.json")), module
 
 
-def count_messages(model, messages, response_format=None):
+def count_messages(model, messages, response_format=None, reasoning_effort="high"):
     if (not isinstance(messages, list) or not messages or
             any(not isinstance(message, dict) or set(message) - {"role", "content"} or
                 message.get("role") not in {"system", "user", "assistant"} or
@@ -176,7 +204,7 @@ def count_messages(model, messages, response_format=None):
     if model == "deepseek/deepseek-v4-flash":
         tokenizer, reference = _deepseek_encoder()
         # The published reference includes role delimiters and generation prefix.
-        rendered = reference.encode_messages(deepcopy(messages), thinking_mode="thinking", reasoning_effort="high")
+        rendered = reference.encode_messages(deepcopy(messages), thinking_mode="thinking", reasoning_effort=reasoning_effort)
         return len(tokenizer.encode(rendered, add_special_tokens=False).ids)
     if model == "deepseek/deepseek-v4.1-flash":
         if ([m["role"] for m in messages] not in (["system", "user"], ["system", "user", "user"])
@@ -184,7 +212,7 @@ def count_messages(model, messages, response_format=None):
             raise ContextBudgetError("hermes_counter_uncalibrated_deepseek_flash_plus_shape")
         tokenizer, reference = _deepseek_v41_encoder()
         rendered = reference.encode_messages(deepcopy(messages), thinking_mode="thinking",
-                                              reasoning_effort="high")
+                                              reasoning_effort=reasoning_effort)
         return len(tokenizer.encode(rendered, add_special_tokens=False).ids)
     if model == "openai/gpt-6-luna":
         import tiktoken
@@ -276,11 +304,23 @@ def _load_certificates():
         evidence = CERTIFICATES.with_name(name).read_bytes()
         if hashlib.sha256(evidence).hexdigest() != profile.get("evidenceSha256"):
             raise ContextBudgetError("hermes_counter_evidence_mismatch")
+        for alternative in profile.get("reasoningProfiles", {}).values():
+            name = alternative.get("evidenceFile")
+            if not isinstance(name, str) or Path(name).name != name:
+                raise ContextBudgetError("hermes_counter_evidence_missing")
+            if hashlib.sha256(CERTIFICATES.with_name(name).read_bytes()).hexdigest() != alternative.get("evidenceSha256"):
+                raise ContextBudgetError("hermes_counter_evidence_mismatch")
     return profiles
 
 
 def prepare_admission(body, certificates=None, counter=count_messages):
     budget = body.get("tp_context_budget")
+    reasoning_profile = body.get("tp_reasoning_profile")
+    if reasoning_profile not in (None, MEDIUM_REASONING_PROFILE):
+        raise ContextBudgetError("hermes_reasoning_profile_invalid")
+    if reasoning_profile and (not isinstance(budget, dict) or budget.get("contract") != CONTRACT_V2 or
+            budget.get("profile") != "natal_transit" or body.get("tp_managed_method_context") is None):
+        raise ContextBudgetError("hermes_reasoning_profile_invalid")
     if budget is None:
         if body.get("tp_preflight_only"):
             raise ContextBudgetError("hermes_context_budget_required")
@@ -306,7 +346,21 @@ def prepare_admission(body, certificates=None, counter=count_messages):
     profile = profiles.get(model)
     if not profile:
         raise ContextBudgetError("hermes_context_route_unavailable")
-    count = counter(model, body.get("messages"), body.get("response_format"))
+    if reasoning_profile:
+        certified = profile.get("reasoningProfiles", {}).get(reasoning_profile)
+        if (not isinstance(certified, dict) or certified.get("reasoningEffort") != "medium" or
+                certified.get("accuracy") not in {"provider_verified", "calibrated"} or
+                not re.fullmatch(r"[0-9a-f]{64}", str(certified.get("evidenceSha256", ""))) or
+                not certified.get("evidenceFile") or not certified.get("counterRevision") or
+                certified.get("counterRevision") == profile.get("counterRevision") or
+                type(certified.get("framingUpperCorrection")) is not int or certified["framingUpperCorrection"] < 0 or
+                type(certified.get("contextWindow")) is not int or not 0 < certified["contextWindow"] <= profile.get("contextWindow", 0) or
+                certified.get("route") != profile.get("route") or certified.get("counter") != profile.get("counter")):
+            raise ContextBudgetError("hermes_reasoning_profile_uncertified")
+        profile = certified
+        count = counter(model, body.get("messages"), body.get("response_format"), reasoning_effort="medium")
+    else:
+        count = counter(model, body.get("messages"), body.get("response_format"))
     if type(count) is not int or count < 0:
         raise ContextBudgetError("hermes_counter_invalid")
     # A calibration may only add a conservative correction, never subtract.
@@ -350,6 +404,9 @@ def install_context_budget(agent, body):
         # Full history/facts may be rejected, never automatically summarized.
         agent.compression_enabled = False
         overrides = deepcopy(getattr(agent, "request_overrides", {}) or {})
+        if body.get("tp_reasoning_profile") == MEDIUM_REASONING_PROFILE:
+            overrides.setdefault("extra_body", {})["reasoning"] = {"effort": "medium"}
+            agent.reasoning_config = {"effort": "medium"}
         provider = overrides.setdefault("extra_body", {}).setdefault("provider", {})
         descriptor = _attempt_descriptor(body)
         if (body["tp_context_budget"].get("contract") == CONTRACT_V2 and
@@ -405,12 +462,11 @@ def managed_completion_action(agent, content):
     try:
         issues = managed_transit_issues(content, context)
     except Exception:
+        _log_managed_attempt(agent, "validation_unavailable")
         return "fail", "managed_transit_validation_unavailable"
     if not issues:
         return "pass", ""
-    logging.getLogger(__name__).warning(
-        "Managed transit validation attempt=%s issues=%s",
-        getattr(agent, "_tp_context_model_calls", 0), "|".join(issues))
+    _log_managed_attempt(agent, "validation_retry" if getattr(agent, "_tp_context_model_calls", 0) < 3 else "validation_exhausted", issues=issues)
     if getattr(agent, "_tp_context_model_calls", 0) >= 3:
         return "fail", "managed_transit_validation_exhausted"
     feedback = managed_transit_repair_prompt(issues, context)
@@ -472,7 +528,8 @@ def admit_provider_call(agent, api_kwargs):
         expected_provider = {"order": ["deepinfra/fp8", "gmicloud/fp8"],
             "only": ["deepinfra/fp8", "gmicloud/fp8"], "allow_fallbacks": True,
             "max_price": current_cap}
-    expected_effort = "medium" if original["model"] == "openai/gpt-6.1-terra" else "high"
+    expected_effort = "medium" if (original["model"] == "openai/gpt-6.1-terra" or
+                                    original.get("tp_reasoning_profile") == MEDIUM_REASONING_PROFILE) else "high"
     if original["model"] in {"openai/gpt-6.1-terra", "deepseek/deepseek-v4.1-flash"}:
         expected_provider["require_parameters"] = True
     if (extra.get("provider") != expected_provider or extra.get("service_tier") != "default"
@@ -520,3 +577,4 @@ def admit_provider_call(agent, api_kwargs):
     # This guard is immediately before transport, after middleware/overrides.
     # Failed admission is not counted as a dispatched provider attempt.
     agent._tp_context_model_calls = calls + 1
+    _log_managed_attempt(agent, "start")

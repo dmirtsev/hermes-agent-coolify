@@ -9,7 +9,10 @@ financial evidence by accident.
 from __future__ import annotations
 
 import copy
+import json
+import logging
 import os
+import re
 from contextlib import contextmanager
 from contextvars import ContextVar
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
@@ -234,6 +237,19 @@ def record_openrouter_response(agent: Any, response: Any) -> bool:
 
     request_key = _request_key_for_agent(agent)
     record = extract_openrouter_generation(response)
+    body = getattr(agent, "_tp_context_budget_body", None)
+    descriptor = body.get("tp_attempt_reserve") if isinstance(body, dict) else None
+    request_id = descriptor.get("requestId") if isinstance(descriptor, dict) else None
+    if isinstance(request_id, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,100}", request_id):
+        choices = _field(response, "choices", [])
+        finish = _field(choices[0], "finish_reason") if isinstance(choices, (list, tuple)) and choices else None
+        finish = finish if isinstance(finish, str) and finish in {"stop", "length", "content_filter", "tool_calls"} else "unknown"
+        tokens = record.get("tokens", {})
+        counts = {k: v for k, v in tokens.items() if k in {"input", "output", "reasoning"} and type(v) is int and 0 <= v <= 10000000}
+        logging.getLogger(__name__).info("managed_attempt %s", json.dumps({
+            "request_id": request_id, "event": "response", "attempt": getattr(agent, "_tp_context_model_calls", 0),
+            "finish_reason": finish, "tokens": counts,
+        }, separators=(",", ":")))
     records = getattr(agent, "_openrouter_accounting_generations", None)
     if not isinstance(records, list):
         records = []
