@@ -415,6 +415,39 @@ class PatchedHermesAccountingIntegrationTests(unittest.TestCase):
         claim.assert_not_called()
         adapter._run_agent.assert_not_awaited()
 
+    def test_v2_preflight_passes_strict_execution_guard_without_dispatch(self):
+        from gateway.platforms.api_server import APIServerAdapter
+        from agent.context_budget import prepare_admission
+        prompt = "Synthetic managed preflight."
+        body = {"model": "openai/gpt-6-luna", "tp_dialogue_model": "gpt_luna", "stream": False,
+            "tp_execution_mode": "interpretation_facts_v1", "tp_answer_format": "hermes_managed_v1",
+            "tp_hermes_policy": {"version_id": "v", "version": 1, "sha256": "a" * 64,
+                "system_sha256": hashlib.sha256(prompt.encode()).hexdigest()},
+            "tp_context_budget": {"contract": "hermes-context-budget-v2", "profile": "natal",
+                "inputBudget": 128000, "completionTokens": 32768},
+            "tp_preflight_only": True, "messages": [{"role": "system", "content": prompt},
+                                                    {"role": "user", "content": "Synthetic facts"}]}
+        class Request:
+            headers = {"Authorization": "Bearer gateway-token", "Idempotency-Key": "synthetic-v2-preflight"}
+            async def json(self): return body
+        adapter = object.__new__(APIServerAdapter)
+        adapter._api_key, adapter._model_name = "gateway-token", "test/model"
+        adapter._run_agent = AsyncMock()
+        with patch.dict(os.environ, {"HERMES_DIALOGUE_MODEL_CHOICE_ENABLED": "true", "HERMES_RUNTIME_TIER": "economy", "HERMES_FIXED_MODEL_PROVIDER": "openrouter"}), \
+             patch("gateway.platforms.api_server.prepare_admission", wraps=prepare_admission) as admission, \
+             patch("gateway.platforms.api_server.durable_begin_request") as claim:
+            response = asyncio.run(adapter._handle_chat_completions(Request()))
+            self.assertEqual(response.status, 200)
+            self.assertEqual(json.loads(response.body)["admission"]["completionTokens"], 32768)
+            self.assertTrue(json.loads(response.body)["admission"]["admitted"])
+            admission.assert_called_once_with(body)
+            claim.assert_not_called()
+            body["tp_context_budget"]["completionTokens"] = 8192
+            response = asyncio.run(adapter._handle_chat_completions(Request()))
+            self.assertEqual(response.status, 400)
+            admission.assert_called_once()
+        adapter._run_agent.assert_not_awaited()
+
     def test_budget_real_provider_boundary_has_no_hidden_prompt_or_auto_replacement(self):
         from gateway.platforms.api_server import APIServerAdapter
         from run_agent import AIAgent
