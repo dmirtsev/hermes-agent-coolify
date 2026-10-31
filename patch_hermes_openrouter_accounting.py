@@ -674,6 +674,7 @@ from agent.versioned_methods import (
 from agent.sakoian_analysis_context import (
     SakoianContextError,
     prepare_sakoian_analysis_context,
+    prepare_sakoian_context,
     narrate_sakoian_once,
 )
 
@@ -1398,7 +1399,7 @@ replace_once(
     API_SERVER,
     '        try:\n            versioned_method_guard = prepare_versioned_method_context(',
     '''        try:
-            sakoian_analysis_guard = prepare_sakoian_analysis_context(
+            sakoian_analysis_guard = prepare_sakoian_context(
                 body.get("tp_analysis_context") if isinstance(body, dict) else None,
                 expected_request_id=request.headers.get("Idempotency-Key"),
             )
