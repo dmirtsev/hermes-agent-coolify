@@ -34,6 +34,8 @@ replace(api,
 replace(api,
     '        messages = body.get("messages")\n',
     '''        try:
+            if body.get("tp_attempt_reserve") is not None and body.get("tp_context_budget") is None:
+                raise ContextBudgetError("hermes_context_budget_required")
             if body.get("tp_context_budget") is not None and [m.get("role") for m in body.get("messages", [])] != ["system", "user"]:
                 raise ContextBudgetError("hermes_context_initial_messages_invalid")
             # The exact journaled completion can be replayed under its original
@@ -49,7 +51,8 @@ replace(api,
             else:
                 context_admission = prepare_admission(body)
             if body.get("tp_preflight_only"):
-                return web.json_response({"admission": context_admission})
+                return web.json_response({"admission": context_admission,
+                    "attemptReserveContract": "hermes-attempt-reserve-v1"})
             if not exact_completed:
                 require_admission(body, context_admission)
         except (ContextBudgetError, OSError, ImportError) as error:
@@ -84,6 +87,14 @@ replace(api,
     '            if context_admission is None:\n'
     '                system_prompt = versioned_method_guard.prompt\n',
     "managed method already present in counted messages")
+replace(api,
+    '            err_body["error"]["hermes"] = {\n                "completed": completed,\n',
+    '            reserve_error = result.get("error")\n'
+    '            if isinstance(reserve_error, str) and reserve_error.startswith("hermes_attempt_reserve_"):\n'
+    '                err_body["error"]["code"] = ("hermes_attempt_reserve_denied"\n'
+    '                    if reserve_error == "hermes_attempt_reserve_denied" else "hermes_attempt_reserve_unavailable")\n'
+    '            err_body["error"]["hermes"] = {\n                "completed": completed,\n',
+    "surface safe reservation failure with actual accounting")
 loop = root / "agent/conversation_loop.py"
 replace(loop,
     '            if isinstance(am.get("content"), str):\n'
@@ -94,11 +105,19 @@ replace(loop,
 replace(loop,
     'from agent.usage_pricing import estimate_usage_cost, normalize_usage\n',
     'from agent.usage_pricing import estimate_usage_cost, normalize_usage\n'
-    'from agent.context_budget import admit_provider_call, readable_managed_part, managed_completion_action\n', "provider guard import")
+    'from agent.context_budget import ContextBudgetError, admit_provider_call, readable_managed_part, managed_completion_action\n', "provider guard import")
 replace(loop,
     '                    _accounting_attempt_dispatched = True\n',
     '                    admit_provider_call(agent, next_api_kwargs)\n'
     '                    _accounting_attempt_dispatched = True\n', "final pre-transport admission")
+replace(loop,
+    '            except Exception as api_error:\n                if _accounting_attempt_dispatched and not _accounting_response_recorded:\n',
+    '            except Exception as api_error:\n'
+    '                if isinstance(api_error, ContextBudgetError):\n'
+    '                    return {"final_response": "", "messages": messages, "api_calls": api_call_count,\n'
+    '                            "completed": False, "failed": True, "error": str(api_error)}\n'
+    '                if _accounting_attempt_dispatched and not _accounting_response_recorded:\n',
+    "admission failures stop immediately without hidden retries")
 replace(loop,
     '                        if assistant_message is not None and not _trunc_has_tool_calls:\n',
     '''                        if (getattr(agent, "_tp_context_budget_body", None) is not None

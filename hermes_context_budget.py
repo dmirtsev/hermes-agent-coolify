@@ -12,6 +12,8 @@ import logging
 import math
 import os
 import re
+import urllib.error
+import urllib.request
 from copy import deepcopy
 from functools import lru_cache
 from pathlib import Path
@@ -40,6 +42,81 @@ CERTIFICATES = Path(__file__).with_name("context_budget_routes.json")
 
 class ContextBudgetError(ValueError):
     pass
+
+
+ATTEMPT_RESERVE_CONTRACT = "hermes-attempt-reserve-v1"
+_ATTEMPT_CALLBACK_TIMEOUT = 8.0
+
+
+def _attempt_descriptor(body):
+    value = body.get("tp_attempt_reserve")
+    if value is None:
+        return None
+    if not isinstance(value, dict) or value.get("contract") != ATTEMPT_RESERVE_CONTRACT:
+        raise ContextBudgetError("hermes_attempt_reserve_descriptor_invalid")
+    if not isinstance(value.get("token"), str) or not re.fullmatch(r"[0-9a-f]{64}", value["token"]):
+        raise ContextBudgetError("hermes_attempt_reserve_token_invalid")
+    if (not isinstance(value.get("requestId"), str) or not value["requestId"]
+            or value["requestId"] != body.get("tp_request_id")):
+        raise ContextBudgetError("hermes_attempt_reserve_request_mismatch")
+    callback = value.get("callbackUrl")
+    if callback != "https://test.astrogeoagent.ru/api/internal/hermes/attempt-reserve":
+        raise ContextBudgetError("hermes_attempt_reserve_callback_invalid")
+    if not isinstance(value.get("initialAdmission"), dict):
+        raise ContextBudgetError("hermes_attempt_reserve_admission_missing")
+    return value
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def _authorize_retry(descriptor, admission, attempt):
+    payload = json.dumps({"contract": ATTEMPT_RESERVE_CONTRACT,
+                          "requestId": descriptor["requestId"],
+                          "attempt": attempt, "admission": admission},
+                         separators=(",", ":")).encode()
+    request = urllib.request.Request(descriptor["callbackUrl"], data=payload,
+        headers={"Content-Type": "application/json",
+                 "Authorization": "Bearer " + descriptor["token"]}, method="POST")
+    try:
+        with urllib.request.build_opener(_NoRedirect()).open(request, timeout=_ATTEMPT_CALLBACK_TIMEOUT) as response:
+            if response.status != 200:
+                raise ContextBudgetError("hermes_attempt_reserve_denied")
+            result = json.loads(response.read(65537).decode("utf-8"))
+    except urllib.error.HTTPError as error:
+        code = "hermes_attempt_reserve_denied" if 300 <= error.code < 500 else "hermes_attempt_reserve_unavailable"
+        raise ContextBudgetError(code) from None
+    except (OSError, ValueError, urllib.error.URLError) as error:
+        raise ContextBudgetError("hermes_attempt_reserve_unavailable") from error
+    if (not isinstance(result, dict) or result.get("approved") is not True or
+            result.get("requestId") != descriptor["requestId"] or
+            result.get("attempt") != attempt or
+            result.get("messagesSha256") != admission.get("messagesSha256")):
+        raise ContextBudgetError("hermes_attempt_reserve_denied")
+
+
+def _require_known_previous_attempt(descriptor, attempt):
+    """Never authorize a retry after an unknown/ambiguous prior dispatch."""
+    try:
+        if __package__:
+            from .durable_accounting import get_request_view
+        else:
+            from hermes_durable_accounting import get_request_view
+        view = get_request_view(descriptor["requestId"])
+    except Exception as error:
+        raise ContextBudgetError("hermes_attempt_reserve_accounting_unavailable") from error
+    accounting = view.get("accounting") if isinstance(view, dict) else None
+    generations = accounting.get("generations") if isinstance(accounting, dict) else None
+    evidence = view.get("evidence", {}) if isinstance(view, dict) else {}
+    if (not isinstance(generations, list) or len(generations) != attempt - 1
+            or evidence.get("has_unresolved_attempt") is not False):
+        raise ContextBudgetError("hermes_attempt_reserve_previous_attempt_unknown")
+    for generation in generations[:attempt - 1]:
+        cost = generation.get("cost", {}) if isinstance(generation, dict) else {}
+        if cost.get("status") != "actual":
+            raise ContextBudgetError("hermes_attempt_reserve_previous_attempt_unknown")
 
 
 # One implementation for admission receipts and durable request digests.
@@ -317,6 +394,14 @@ def admit_provider_call(agent, api_kwargs):
     if original is None:
         return
     calls = getattr(agent, "_tp_context_model_calls", 0)
+    descriptor = _attempt_descriptor(original)
+    if descriptor is not None:
+        if __package__:
+            from .durable_accounting import request_key_for_agent
+        else:
+            from hermes_durable_accounting import request_key_for_agent
+        if request_key_for_agent(agent) != descriptor["requestId"]:
+            raise ContextBudgetError("hermes_attempt_reserve_request_mismatch")
     if api_kwargs.get("model") != original["model"] or api_kwargs.get("tools"):
         raise ContextBudgetError("hermes_context_provider_contract_changed")
     if (calls and getattr(agent, "_tp_managed_transit_context", None) is not None
@@ -373,6 +458,13 @@ def admit_provider_call(agent, api_kwargs):
     receipt = prepare_admission(actual)
     if not receipt or not receipt["admitted"]:
         raise ContextBudgetError((receipt or {}).get("reason", "hermes_context_not_admitted"))
+    if calls == 0 and descriptor is not None:
+        expected = descriptor.get("initialAdmission")
+        if receipt != expected:
+            raise ContextBudgetError("hermes_attempt_reserve_initial_mismatch")
+    elif calls and descriptor is not None:
+        _require_known_previous_attempt(descriptor, calls + 1)
+        _authorize_retry(descriptor, receipt, calls + 1)
     # This guard is immediately before transport, after middleware/overrides.
     # Failed admission is not counted as a dispatched provider attempt.
     agent._tp_context_model_calls = calls + 1

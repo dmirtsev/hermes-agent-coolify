@@ -19,13 +19,29 @@ class PatchedManagedRepairTests(unittest.TestCase):
     def setUpClass(cls):
         sys.path.insert(0, '/opt/hermes')
 
-    def run_loop(self, candidates, *, overflow=False, validator_failure=False):
+    def run_loop(self, candidates, *, overflow=False, validator_failure=False, reserve=None):
         from gateway.platforms.api_server import APIServerAdapter
         from run_agent import AIAgent
         supplied = body(True)
         supplied.update(model='openai/gpt-6-luna', tp_dialogue_model='gpt_luna',
             response_format={'type':'json_object'},
             tp_context_budget={'contract':'hermes-context-budget-v1','profile':'natal_transit','inputBudget':128000})
+        request_key = None
+        def admission_receipt(messages):
+            from agent.context_budget import digest
+            return {'contract':'hermes-context-budget-v1','model':supplied['model'],
+                'route':'test','counter':'test','counterRevision':'1','accuracy':'calibrated',
+                'inputTokens':sum(len(m['content']) for m in messages), 'inputBudget':128000,
+                'completionTokens':8192,'marginTokens':6400,'contextWindow':1000000,
+                'messagesSha256':digest(messages),'admitted':True,'reason':None}
+        if reserve is not None:
+            from agent.durable_accounting import begin_request
+            request_key='reserve-loop-'+uuid.uuid4().hex
+            begin_request(request_key, 'a'*64)
+            supplied['tp_request_id']=request_key
+            supplied['tp_attempt_reserve']={'contract':'hermes-attempt-reserve-v1',
+                'requestId':request_key,'callbackUrl':'https://test.astrogeoagent.ru/api/internal/hermes/attempt-reserve',
+                'token':'a'*64,'initialAdmission':admission_receipt(supplied['messages'])}
         agent = AIAgent(model=supplied['model'], provider='openrouter',
             api_key='synthetic-unused-key', base_url='https://example.invalid/v1',
             enabled_toolsets=[], max_iterations=3, max_tokens=8192,
@@ -55,7 +71,7 @@ class PatchedManagedRepairTests(unittest.TestCase):
         checks=[]
         def admission(actual):
             checks.append(copy.deepcopy(actual['messages']))
-            return {'admitted':not(overflow and len(checks)>1),'reason':'hermes_context_input_overflow'}
+            return ({**admission_receipt(actual['messages']), 'admitted':not(overflow and len(checks)>1), 'reason':'hermes_context_input_overflow' if overflow and len(checks)>1 else None})
         import agent.conversation_loop as loop
         original_guard=loop.admit_provider_call
         def capture_guard(a,kwargs):
@@ -63,7 +79,22 @@ class PatchedManagedRepairTests(unittest.TestCase):
             except Exception:
                 print('SYNTHETIC_GUARD_DIAGNOSTIC '+json.dumps({'model':kwargs.get('model'),'max_tokens':kwargs.get('max_tokens'),'max_completion_tokens':kwargs.get('max_completion_tokens'),'tools':bool(kwargs.get('tools')),'provider_calls':getattr(a,'_tp_context_model_calls',None)}))
                 raise
-        with patch('agent.conversation_loop.admit_provider_call',side_effect=capture_guard), patch('agent.context_budget.prepare_admission',side_effect=admission), patch.dict(os.environ,{
+        class CallbackResponse:
+            status=200
+            def __init__(self,request): self.request=request
+            def __enter__(self): return self
+            def __exit__(self,*args): pass
+            def read(self,limit):
+                data=json.loads(self.request.data)
+                return json.dumps({'approved':reserve['outcome']=='approved',
+                    'requestId':data['requestId'],'attempt':data['attempt'],
+                    'messagesSha256':data['admission']['messagesSha256']}).encode()
+        def callback(request,timeout):
+            data=json.loads(request.data)
+            reserve['receipts'].append((data['attempt'],copy.deepcopy(data['admission'])))
+            if reserve['outcome']=='unavailable': raise TimeoutError()
+            return CallbackResponse(request)
+        with patch('agent.context_budget.urllib.request.build_opener',return_value=SimpleNamespace(open=callback)), patch('agent.conversation_loop.admit_provider_call',side_effect=capture_guard), patch('agent.context_budget.prepare_admission',side_effect=admission), patch.dict(os.environ,{
                 'HERMES_RUNTIME_TIER':'economy','HERMES_RUNTIME_ID':'synthetic-managed-test'}):
             if validator_failure:
                 with patch('agent.context_budget.managed_transit_issues',side_effect=RuntimeError('synthetic internal failure')):
@@ -71,14 +102,55 @@ class PatchedManagedRepairTests(unittest.TestCase):
                         conversation_history=[],strict_context_only=True,
                         managed_system_prompt=supplied['messages'][0]['content'],
                         managed_response_format=supplied['response_format'],managed_continuation=True,
-                        context_budget_body=supplied))
+                        context_budget_body=supplied, accounting_request_key=request_key))
             else:
                 result,usage=asyncio.run(adapter._run_agent(user_message=supplied['messages'][1]['content'],
                     conversation_history=[],strict_context_only=True,
                     managed_system_prompt=supplied['messages'][0]['content'],
                     managed_response_format=supplied['response_format'],managed_continuation=True,
-                    context_budget_body=supplied))
+                    context_budget_body=supplied, accounting_request_key=request_key))
         return result,usage,calls,checks,supplied
+
+    def test_reservation_gate_in_real_loop_preserves_accounting_and_context(self):
+        bad=reply('{{s2}} Повторное прохождение утром.')
+        for outcome in ('approved','denied','unavailable'):
+            with self.subTest(outcome=outcome):
+                reserve={'outcome':outcome,'receipts':[]}
+                result,usage,calls,_,original=self.run_loop([(bad,'stop'),(reply(),'stop')],reserve=reserve)
+                self.assertEqual(len(calls),2 if outcome=='approved' else 1)
+                self.assertEqual(calls[0]['messages'],original['messages'])
+                self.assertEqual(calls[0].get('max_tokens',calls[0].get('max_completion_tokens')),8192)
+                self.assertEqual(len(reserve['receipts']),1)
+                attempt,receipt=reserve['receipts'][0]
+                self.assertEqual(attempt,2)
+                self.assertGreater(receipt['inputTokens'],original['tp_attempt_reserve']['initialAdmission']['inputTokens'])
+                if outcome=='approved':
+                    self.assertEqual(calls[1]['messages'][:2],original['messages'])
+                    self.assertEqual(calls[1].get('max_tokens',calls[1].get('max_completion_tokens')),8192)
+                else:
+                    self.assertEqual(result['error'],'hermes_attempt_reserve_'+outcome)
+                accounting=usage['_hermes_openrouter_accounting']
+                self.assertEqual(accounting['cost']['amount_micro_usd'],len(calls)*10)
+
+    def test_reservation_failure_response_keeps_actual_charge(self):
+        from gateway.platforms.api_server import APIServerAdapter
+        for outcome in ('denied','unavailable'):
+            with self.subTest(outcome=outcome):
+                result,usage,calls,_,_=self.run_loop(
+                    [(reply('{{s2}} Повторное прохождение утром.'),'stop')],
+                    reserve={'outcome':outcome,'receipts':[]})
+                adapter=object.__new__(APIServerAdapter)
+                adapter._api_key='';adapter._model_name='hermes-agent';adapter._check_auth=lambda request:None
+                adapter._run_agent=AsyncMock(return_value=(result,usage))
+                key='reserve-failure-response-'+uuid.uuid4().hex
+                class Request:
+                    headers={'Idempotency-Key':key}
+                    async def json(self): return {'model':'caller/model','messages':[{'role':'user','content':'same'}],'stream':False}
+                response=asyncio.run(adapter._handle_chat_completions(Request()))
+                payload=json.loads(response.text)
+                self.assertEqual(payload['error']['code'],'hermes_attempt_reserve_'+outcome)
+                self.assertEqual(payload['hermes_accounting']['cost']['amount_micro_usd'],10)
+                self.assertEqual(len(calls),1)
 
     def test_normal_and_length_bad_draft_repair_with_full_original_context(self):
         bad=reply('{{s2}}. Повторное прохождение: ретроградный Меркурий утром.')
