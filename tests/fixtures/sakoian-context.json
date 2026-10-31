@@ -1,0 +1,917 @@
+{
+  "request": {
+    "schema_version": "tp-astro-analysis.moment.v1",
+    "request_id": "sakoian-core-live-20261031",
+    "access_scope_ref": "core-test",
+    "subject_ref": "synthetic-stage0",
+    "chart_ref": "synthetic-chart",
+    "mode": "core_composition",
+    "requested_depth": "primary",
+    "method_ref": {
+      "method_id": "sakoian_transit_analysis",
+      "version": "0.3.0",
+      "package_hash": "3aa9906938942414502e5acaec472235a5e12ab065a6e3ca3d97b09be3eb1f74",
+      "status": "test_only",
+      "knowledge_ref": {
+        "environment": "test",
+        "family_id": "sakoian_transit_analysis_core",
+        "version": "0.3.0",
+        "content_hash": "dce3fae7afcbcebd32e476bbbd11428cf1a1e0e81bd3a09c49b3b861b33ee211",
+        "knowledge_base_slug": "sakoian-transit-primary-v1"
+      }
+    },
+    "moment_utc": "2026-01-01T12:00:00Z",
+    "display_timezone": "UTC",
+    "natal_context": {
+      "subject_ref": "synthetic-stage0",
+      "chart_ref": "synthetic-chart",
+      "producer": "core_astrogeo",
+      "core_commit": "578254debc08aa06d407a1b1000fd20436b95a1b",
+      "observed_at_utc": "2026-10-31T13:45:54.422749Z",
+      "source_contract": "composition-v1",
+      "time_accuracy": "exact",
+      "precision_degrees": 1e-06,
+      "settings": {
+        "house_system_requested": "Placidus",
+        "house_system_effective": "Placidus",
+        "fallback_reason": null,
+        "zodiac": "tropical",
+        "orb_profile_id": "stage0",
+        "orb_resolution": "max",
+        "orbs_by_aspect": {
+          "conjunction": {
+            "default": 5.0
+          },
+          "sextile": {
+            "default": 5.0
+          },
+          "square": {
+            "default": 5.0
+          },
+          "trine": {
+            "default": 5.0
+          },
+          "opposition": {
+            "default": 5.0
+          }
+        }
+      },
+      "source_result_id": "sakoian-core-live-20261031",
+      "source_request_hash": "4e8f3560a196a897c18685b627082c25cb016d4938998afb082423422cb598bc",
+      "source_response_hash": "5401734894f86c68296fec301b44d98332c43cba8296b22af87c4a3b755aa68e",
+      "context_id": "core-natal-5401734894f86c68296fec30",
+      "role": "natal",
+      "moment_utc": "2000-01-01T12:00:00Z",
+      "objects": [
+        {
+          "object_id": "sun",
+          "longitude": 280.368919,
+          "sign": "capricorn",
+          "house": 10
+        },
+        {
+          "object_id": "moon",
+          "longitude": 223.323751,
+          "sign": "scorpio",
+          "house": 8
+        },
+        {
+          "object_id": "mercury",
+          "longitude": 271.889277,
+          "sign": "capricorn",
+          "house": 9
+        },
+        {
+          "object_id": "venus",
+          "longitude": 241.565788,
+          "sign": "sagittarius",
+          "house": 8
+        },
+        {
+          "object_id": "mars",
+          "longitude": 327.963303,
+          "sign": "aquarius",
+          "house": 11
+        },
+        {
+          "object_id": "jupiter",
+          "longitude": 25.253087,
+          "sign": "aries",
+          "house": 1
+        },
+        {
+          "object_id": "saturn",
+          "longitude": 40.395663,
+          "sign": "taurus",
+          "house": 1
+        }
+      ],
+      "houses": {
+        "status": "complete",
+        "frame_id": "core-natal-5401734894f86c68296fec30",
+        "cusps": [
+          11.3739,
+          42.906648,
+          71.960854,
+          99.611088,
+          128.040522,
+          158.849424,
+          191.3739,
+          222.906648,
+          251.960854,
+          279.611088,
+          308.040522,
+          338.849424
+        ]
+      },
+      "aspects": {
+        "coverage": {
+          "status": "complete",
+          "object_ids": [
+            "jupiter",
+            "mars",
+            "mercury",
+            "moon",
+            "saturn",
+            "sun",
+            "venus"
+          ],
+          "aspect_types": [
+            "conjunction",
+            "opposition",
+            "sextile",
+            "square",
+            "trine"
+          ]
+        },
+        "items": [
+          {
+            "aspect_id": "core-base-sun-base-moon-sextile",
+            "from_layer": "natal",
+            "to_layer": "natal",
+            "from_object_id": "sun",
+            "to_object_id": "moon",
+            "aspect_type": "sextile",
+            "orb_deg": 2.9548,
+            "allowed_orb_deg": 5.0,
+            "phase": "unknown"
+          },
+          {
+            "aspect_id": "core-base-sun-base-saturn-trine",
+            "from_layer": "natal",
+            "to_layer": "natal",
+            "from_object_id": "sun",
+            "to_object_id": "saturn",
+            "aspect_type": "trine",
+            "orb_deg": 0.0267,
+            "allowed_orb_deg": 5.0,
+            "phase": "unknown"
+          },
+          {
+            "aspect_id": "core-base-moon-base-saturn-opposition",
+            "from_layer": "natal",
+            "to_layer": "natal",
+            "from_object_id": "moon",
+            "to_object_id": "saturn",
+            "aspect_type": "opposition",
+            "orb_deg": 2.9281,
+            "allowed_orb_deg": 5.0,
+            "phase": "unknown"
+          },
+          {
+            "aspect_id": "core-base-mercury-base-mars-sextile",
+            "from_layer": "natal",
+            "to_layer": "natal",
+            "from_object_id": "mercury",
+            "to_object_id": "mars",
+            "aspect_type": "sextile",
+            "orb_deg": 3.926,
+            "allowed_orb_deg": 5.0,
+            "phase": "unknown"
+          },
+          {
+            "aspect_id": "core-base-venus-base-mars-square",
+            "from_layer": "natal",
+            "to_layer": "natal",
+            "from_object_id": "venus",
+            "to_object_id": "mars",
+            "aspect_type": "square",
+            "orb_deg": 3.6025,
+            "allowed_orb_deg": 5.0,
+            "phase": "unknown"
+          },
+          {
+            "aspect_id": "core-base-mars-base-jupiter-sextile",
+            "from_layer": "natal",
+            "to_layer": "natal",
+            "from_object_id": "mars",
+            "to_object_id": "jupiter",
+            "aspect_type": "sextile",
+            "orb_deg": 2.7102,
+            "allowed_orb_deg": 5.0,
+            "phase": "unknown"
+          }
+        ]
+      },
+      "content_hash": "d6e6f78e2dffaf1ae4c036214a8c03dd4ad6167d78ab015af4c0e44717a56572"
+    },
+    "transit_context": {
+      "subject_ref": "synthetic-stage0",
+      "chart_ref": "synthetic-chart",
+      "producer": "core_astrogeo",
+      "core_commit": "578254debc08aa06d407a1b1000fd20436b95a1b",
+      "observed_at_utc": "2026-10-31T13:45:54.422749Z",
+      "source_contract": "composition-v1",
+      "time_accuracy": "exact",
+      "precision_degrees": 1e-06,
+      "settings": {
+        "house_system_requested": "Placidus",
+        "house_system_effective": "Placidus",
+        "fallback_reason": null,
+        "zodiac": "tropical",
+        "orb_profile_id": "stage0",
+        "orb_resolution": "max",
+        "orbs_by_aspect": {
+          "conjunction": {
+            "default": 5.0
+          },
+          "sextile": {
+            "default": 5.0
+          },
+          "square": {
+            "default": 5.0
+          },
+          "trine": {
+            "default": 5.0
+          },
+          "opposition": {
+            "default": 5.0
+          }
+        }
+      },
+      "source_result_id": "sakoian-core-live-20261031",
+      "source_request_hash": "4e8f3560a196a897c18685b627082c25cb016d4938998afb082423422cb598bc",
+      "source_response_hash": "5401734894f86c68296fec301b44d98332c43cba8296b22af87c4a3b755aa68e",
+      "context_id": "core-transit-5401734894f86c68296fec30",
+      "role": "transit",
+      "moment_utc": "2026-01-01T12:00:00Z",
+      "objects": [
+        {
+          "object_id": "sun",
+          "longitude": 281.07802,
+          "sign": "capricorn",
+          "house": null
+        },
+        {
+          "object_id": "moon",
+          "longitude": 74.225252,
+          "sign": "gemini",
+          "house": null
+        },
+        {
+          "object_id": "mercury",
+          "longitude": 269.415069,
+          "sign": "sagittarius",
+          "house": null
+        },
+        {
+          "object_id": "venus",
+          "longitude": 279.835634,
+          "sign": "capricorn",
+          "house": null
+        },
+        {
+          "object_id": "mars",
+          "longitude": 283.071423,
+          "sign": "capricorn",
+          "house": null
+        },
+        {
+          "object_id": "jupiter",
+          "longitude": 111.292204,
+          "sign": "cancer",
+          "house": null
+        },
+        {
+          "object_id": "saturn",
+          "longitude": 356.1966,
+          "sign": "pisces",
+          "house": null
+        }
+      ],
+      "houses": {
+        "status": "unavailable",
+        "frame_id": "core-overlay-unused",
+        "cusps": []
+      },
+      "aspects": {
+        "coverage": {
+          "status": "complete",
+          "object_ids": [
+            "jupiter",
+            "mars",
+            "mercury",
+            "moon",
+            "saturn",
+            "sun",
+            "venus"
+          ],
+          "aspect_types": [
+            "conjunction",
+            "opposition",
+            "sextile",
+            "square",
+            "trine"
+          ]
+        },
+        "items": [
+          {
+            "aspect_id": "core-overlay-sun-base-sun-conjunction",
+            "from_layer": "transit",
+            "to_layer": "natal",
+            "from_object_id": "sun",
+            "to_object_id": "sun",
+            "aspect_type": "conjunction",
+            "orb_deg": 0.7091,
+            "allowed_orb_deg": 5.0,
+            "phase": "unknown"
+          },
+          {
+            "aspect_id": "core-overlay-sun-base-moon-sextile",
+            "from_layer": "transit",
+            "to_layer": "natal",
+            "from_object_id": "sun",
+            "to_object_id": "moon",
+            "aspect_type": "sextile",
+            "orb_deg": 2.2457,
+            "allowed_orb_deg": 5.0,
+            "phase": "unknown"
+          },
+          {
+            "aspect_id": "core-overlay-sun-base-saturn-trine",
+            "from_layer": "transit",
+            "to_layer": "natal",
+            "from_object_id": "sun",
+            "to_object_id": "saturn",
+            "aspect_type": "trine",
+            "orb_deg": 0.6824,
+            "allowed_orb_deg": 5.0,
+            "phase": "unknown"
+          },
+          {
+            "aspect_id": "core-overlay-mercury-base-mercury-conjunction",
+            "from_layer": "transit",
+            "to_layer": "natal",
+            "from_object_id": "mercury",
+            "to_object_id": "mercury",
+            "aspect_type": "conjunction",
+            "orb_deg": 2.4742,
+            "allowed_orb_deg": 5.0,
+            "phase": "unknown"
+          },
+          {
+            "aspect_id": "core-overlay-mercury-base-mars-sextile",
+            "from_layer": "transit",
+            "to_layer": "natal",
+            "from_object_id": "mercury",
+            "to_object_id": "mars",
+            "aspect_type": "sextile",
+            "orb_deg": 1.4518,
+            "allowed_orb_deg": 5.0,
+            "phase": "unknown"
+          },
+          {
+            "aspect_id": "core-overlay-mercury-base-jupiter-trine",
+            "from_layer": "transit",
+            "to_layer": "natal",
+            "from_object_id": "mercury",
+            "to_object_id": "jupiter",
+            "aspect_type": "trine",
+            "orb_deg": 4.162,
+            "allowed_orb_deg": 5.0,
+            "phase": "unknown"
+          },
+          {
+            "aspect_id": "core-overlay-venus-base-sun-conjunction",
+            "from_layer": "transit",
+            "to_layer": "natal",
+            "from_object_id": "venus",
+            "to_object_id": "sun",
+            "aspect_type": "conjunction",
+            "orb_deg": 0.5333,
+            "allowed_orb_deg": 5.0,
+            "phase": "unknown"
+          },
+          {
+            "aspect_id": "core-overlay-venus-base-moon-sextile",
+            "from_layer": "transit",
+            "to_layer": "natal",
+            "from_object_id": "venus",
+            "to_object_id": "moon",
+            "aspect_type": "sextile",
+            "orb_deg": 3.4881,
+            "allowed_orb_deg": 5.0,
+            "phase": "unknown"
+          },
+          {
+            "aspect_id": "core-overlay-venus-base-saturn-trine",
+            "from_layer": "transit",
+            "to_layer": "natal",
+            "from_object_id": "venus",
+            "to_object_id": "saturn",
+            "aspect_type": "trine",
+            "orb_deg": 0.56,
+            "allowed_orb_deg": 5.0,
+            "phase": "unknown"
+          },
+          {
+            "aspect_id": "core-overlay-mars-base-sun-conjunction",
+            "from_layer": "transit",
+            "to_layer": "natal",
+            "from_object_id": "mars",
+            "to_object_id": "sun",
+            "aspect_type": "conjunction",
+            "orb_deg": 2.7025,
+            "allowed_orb_deg": 5.0,
+            "phase": "unknown"
+          },
+          {
+            "aspect_id": "core-overlay-mars-base-moon-sextile",
+            "from_layer": "transit",
+            "to_layer": "natal",
+            "from_object_id": "mars",
+            "to_object_id": "moon",
+            "aspect_type": "sextile",
+            "orb_deg": 0.2523,
+            "allowed_orb_deg": 5.0,
+            "phase": "unknown"
+          },
+          {
+            "aspect_id": "core-overlay-mars-base-saturn-trine",
+            "from_layer": "transit",
+            "to_layer": "natal",
+            "from_object_id": "mars",
+            "to_object_id": "saturn",
+            "aspect_type": "trine",
+            "orb_deg": 2.6758,
+            "allowed_orb_deg": 5.0,
+            "phase": "unknown"
+          },
+          {
+            "aspect_id": "core-overlay-jupiter-base-jupiter-square",
+            "from_layer": "transit",
+            "to_layer": "natal",
+            "from_object_id": "jupiter",
+            "to_object_id": "jupiter",
+            "aspect_type": "square",
+            "orb_deg": 3.9609,
+            "allowed_orb_deg": 5.0,
+            "phase": "unknown"
+          }
+        ]
+      },
+      "content_hash": "cad4606a2d2560dfc3104b2bbad9bcb67b94aa51c28de6b79c1d4decfa29dc9a"
+    },
+    "selected_transit": {
+      "aspect_id": "core-overlay-sun-base-moon-sextile",
+      "transit_object_id": "sun",
+      "natal_object_id": "moon"
+    }
+  },
+  "analysis": {
+    "schema_version": "tp-astro-analysis.result.v1",
+    "analysis_id": "analysis_18997128bb69ba56285d4566",
+    "request_id": "sakoian-core-live-20261031",
+    "access_scope_ref": "core-test",
+    "subject_ref": "synthetic-stage0",
+    "chart_ref": "synthetic-chart",
+    "method_ref": {
+      "method_id": "sakoian_transit_analysis",
+      "version": "0.3.0",
+      "package_hash": "3aa9906938942414502e5acaec472235a5e12ab065a6e3ca3d97b09be3eb1f74",
+      "status": "test_only",
+      "knowledge_ref": {
+        "environment": "test",
+        "family_id": "sakoian_transit_analysis_core",
+        "version": "0.3.0",
+        "content_hash": "dce3fae7afcbcebd32e476bbbd11428cf1a1e0e81bd3a09c49b3b861b33ee211",
+        "knowledge_base_slug": "sakoian-transit-primary-v1"
+      }
+    },
+    "input_hash": "18997128bb69ba56285d4566743bd0a9707fae451fe1af6ca62abdd799f62813",
+    "status": "complete",
+    "facts": [
+      {
+        "fact_id": "transit.planet",
+        "kind": "transit_planet",
+        "availability": "known",
+        "value": "sun",
+        "evidence_refs": [
+          "/transit_context/objects/0/object_id"
+        ]
+      },
+      {
+        "fact_id": "transit.position",
+        "kind": "longitude",
+        "availability": "known",
+        "value": 281.07802,
+        "evidence_refs": [
+          "/transit_context/objects/0/longitude"
+        ]
+      },
+      {
+        "fact_id": "natal.house_frame",
+        "kind": "house_frame",
+        "availability": "known",
+        "value": {
+          "status": "complete",
+          "frame_id": "core-natal-5401734894f86c68296fec30",
+          "cusps": [
+            11.3739,
+            42.906648,
+            71.960854,
+            99.611088,
+            128.040522,
+            158.849424,
+            191.3739,
+            222.906648,
+            251.960854,
+            279.611088,
+            308.040522,
+            338.849424
+          ]
+        },
+        "evidence_refs": [
+          "/natal_context/houses"
+        ]
+      },
+      {
+        "fact_id": "transit.natal_house",
+        "kind": "transit_natal_house",
+        "availability": "known",
+        "value": 10,
+        "evidence_refs": [
+          "/transit_context/objects/0/longitude",
+          "/natal_context/houses/cusps"
+        ]
+      },
+      {
+        "fact_id": "transit.aspect",
+        "kind": "transit_natal_aspect",
+        "availability": "known",
+        "value": {
+          "aspect_id": "core-overlay-sun-base-moon-sextile",
+          "from_layer": "transit",
+          "to_layer": "natal",
+          "from_object_id": "sun",
+          "to_object_id": "moon",
+          "aspect_type": "sextile",
+          "orb_deg": 2.2457,
+          "allowed_orb_deg": 5.0,
+          "phase": "unknown"
+        },
+        "evidence_refs": [
+          "/transit_context/aspects/items/1"
+        ]
+      },
+      {
+        "fact_id": "natal.cusp_sign",
+        "kind": "natal_cusp_sign",
+        "availability": "known",
+        "value": "capricorn",
+        "evidence_refs": [
+          "/natal_context/houses/cusps"
+        ]
+      },
+      {
+        "fact_id": "transit.sign",
+        "kind": "transit_sign",
+        "availability": "known",
+        "value": "capricorn",
+        "evidence_refs": [
+          "/transit_context/objects/0/sign",
+          "/transit_context/objects/0/longitude"
+        ]
+      },
+      {
+        "fact_id": "natal.receiver",
+        "kind": "natal_receiver",
+        "availability": "known",
+        "value": "moon",
+        "evidence_refs": [
+          "/natal_context/objects/1/object_id"
+        ]
+      },
+      {
+        "fact_id": "natal.receiver_sign",
+        "kind": "natal_receiver_sign",
+        "availability": "known",
+        "value": "scorpio",
+        "evidence_refs": [
+          "/natal_context/objects/1/sign",
+          "/natal_context/objects/1/longitude"
+        ]
+      },
+      {
+        "fact_id": "natal.receiver_house",
+        "kind": "natal_receiver_house",
+        "availability": "known",
+        "value": 8,
+        "evidence_refs": [
+          "/natal_context/objects/1/house",
+          "/natal_context/houses/cusps"
+        ]
+      },
+      {
+        "fact_id": "natal.pair",
+        "kind": "natal_pair",
+        "availability": "known",
+        "value": {
+          "status": "present",
+          "aspect_types": [
+            "sextile"
+          ]
+        },
+        "evidence_refs": [
+          "/natal_context/aspects/items/0"
+        ]
+      }
+    ],
+    "derivations": [
+      {
+        "derivation_id": "projection.transit_house",
+        "rule_ref": "core.house_projection.v1",
+        "basis_fact_ids": [
+          "transit.position",
+          "natal.house_frame"
+        ],
+        "value": {
+          "house": 10,
+          "house_frame_ref": "core-natal-5401734894f86c68296fec30"
+        },
+        "priority": "primary"
+      },
+      {
+        "derivation_id": "primary.event",
+        "rule_ref": "sakoian.primary_event.v1",
+        "basis_fact_ids": [
+          "transit.planet",
+          "transit.natal_house",
+          "transit.aspect",
+          "natal.cusp_sign"
+        ],
+        "value": {
+          "transit_planet": "sun",
+          "natal_house": 10,
+          "natal_cusp_sign": "capricorn",
+          "aspect_type": "sextile",
+          "natal_receiver": "moon"
+        },
+        "priority": "primary"
+      },
+      {
+        "derivation_id": "primary.aspect_nature",
+        "rule_ref": "sakoian.aspect_nature.v1",
+        "basis_fact_ids": [
+          "transit.aspect"
+        ],
+        "value": {
+          "aspect_type": "sextile",
+          "nature": {
+            "qualities": [
+              "интеллект",
+              "коммуникация",
+              "возможность"
+            ],
+            "ambivalence": "context_dependent",
+            "source_ref": "sakoian.book2:section11:sextile",
+            "outcome_determined": false
+          }
+        },
+        "priority": "primary"
+      },
+      {
+        "derivation_id": "primary.transit_sign",
+        "rule_ref": "sakoian.transit_sign.v1",
+        "basis_fact_ids": [
+          "transit.sign"
+        ],
+        "value": "capricorn",
+        "priority": "primary"
+      },
+      {
+        "derivation_id": "primary.receiver",
+        "rule_ref": "sakoian.natal_receiver.v1",
+        "basis_fact_ids": [
+          "natal.receiver",
+          "natal.receiver_sign",
+          "natal.receiver_house"
+        ],
+        "value": {
+          "object_id": "moon",
+          "sign": "scorpio",
+          "house": 8
+        },
+        "priority": "primary"
+      },
+      {
+        "derivation_id": "primary.natal_pair",
+        "rule_ref": "sakoian.natal_pair.v1",
+        "basis_fact_ids": [
+          "natal.pair",
+          "transit.aspect"
+        ],
+        "value": {
+          "status": "present",
+          "aspect_types": [
+            "sextile"
+          ],
+          "activation_kind": "same_pair_same_aspect_type"
+        },
+        "priority": "primary"
+      },
+      {
+        "derivation_id": "primary.natal_reinforcement",
+        "rule_ref": "sakoian.natal_reinforcement.v1",
+        "basis_fact_ids": [
+          "natal.pair",
+          "transit.aspect"
+        ],
+        "value": {
+          "status": "pair_activated",
+          "natal_aspect_types": [
+            "sextile"
+          ],
+          "transit_aspect_type": "sextile",
+          "source_ref": "sakoian.excerpt:natal-pair-activation",
+          "basis_kind": "source_rule"
+        },
+        "priority": "primary"
+      },
+      {
+        "derivation_id": "primary.synthesis",
+        "rule_ref": "sakoian.primary_synthesis.v1",
+        "basis_fact_ids": [
+          "transit.planet",
+          "transit.natal_house",
+          "natal.cusp_sign",
+          "transit.sign",
+          "transit.aspect",
+          "natal.receiver",
+          "natal.receiver_sign",
+          "natal.receiver_house",
+          "natal.pair"
+        ],
+        "value": {
+          "activating_transit_planet": "sun",
+          "receiving_natal_planet": "moon",
+          "transit_natal_house": 10,
+          "natal_cusp_sign": "capricorn",
+          "transit_sign": "capricorn",
+          "aspect": {
+            "type": "sextile",
+            "orb_deg": 2.2457,
+            "allowed_orb_deg": 5.0,
+            "phase": "unknown",
+            "nature": {
+              "qualities": [
+                "интеллект",
+                "коммуникация",
+                "возможность"
+              ],
+              "ambivalence": "context_dependent",
+              "source_ref": "sakoian.book2:section11:sextile",
+              "outcome_determined": false
+            }
+          },
+          "receiver": {
+            "sign": "scorpio",
+            "house": 8
+          },
+          "natal_pair": {
+            "status": "present",
+            "aspect_types": [
+              "sextile"
+            ]
+          },
+          "activation_kind": "same_pair_same_aspect_type",
+          "reinforcement": {
+            "status": "pair_activated",
+            "natal_aspect_types": [
+              "sextile"
+            ],
+            "transit_aspect_type": "sextile",
+            "source_ref": "sakoian.excerpt:natal-pair-activation",
+            "basis_kind": "source_rule"
+          },
+          "primary_order": [
+            "transit_event",
+            "aspect_nature",
+            "transit_sign",
+            "natal_receiver",
+            "natal_pair"
+          ]
+        },
+        "priority": "primary"
+      }
+    ],
+    "primary_factors": [
+      {
+        "order": 1,
+        "code": "transit_event",
+        "status": "known",
+        "fact_refs": [
+          "transit.planet",
+          "transit.natal_house",
+          "transit.aspect",
+          "natal.cusp_sign"
+        ],
+        "derivation_refs": [
+          "projection.transit_house",
+          "primary.event"
+        ]
+      },
+      {
+        "order": 2,
+        "code": "aspect_nature",
+        "status": "known",
+        "fact_refs": [
+          "transit.aspect"
+        ],
+        "derivation_refs": [
+          "primary.aspect_nature"
+        ]
+      },
+      {
+        "order": 3,
+        "code": "transit_sign",
+        "status": "known",
+        "fact_refs": [
+          "transit.sign"
+        ],
+        "derivation_refs": [
+          "primary.transit_sign"
+        ]
+      },
+      {
+        "order": 4,
+        "code": "natal_receiver",
+        "status": "known",
+        "fact_refs": [
+          "natal.receiver",
+          "natal.receiver_sign",
+          "natal.receiver_house"
+        ],
+        "derivation_refs": [
+          "primary.receiver"
+        ]
+      },
+      {
+        "order": 5,
+        "code": "natal_pair",
+        "status": "known",
+        "fact_refs": [
+          "natal.pair"
+        ],
+        "derivation_refs": [
+          "primary.natal_pair",
+          "primary.natal_reinforcement"
+        ]
+      }
+    ],
+    "natal_pair": {
+      "status": "present",
+      "aspect_types": [
+        "sextile"
+      ]
+    },
+    "activation_kind": "same_pair_same_aspect_type",
+    "warnings": [
+      {
+        "code": "ASPECT_PHASE_UNKNOWN",
+        "message": "Aspect phase was not supplied; it is not inferred from a single position.",
+        "paths": [
+          "/transit_context/aspects/items/1/phase"
+        ]
+      }
+    ],
+    "coverage": {
+      "profile": "primary",
+      "completed_steps": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "omitted_steps": []
+    }
+  },
+  "source": {
+    "producer": "core_astrogeo",
+    "core_commit": "578254debc08aa06d407a1b1000fd20436b95a1b",
+    "request_hash": "4e8f3560a196a897c18685b627082c25cb016d4938998afb082423422cb598bc",
+    "response_hash": "5401734894f86c68296fec301b44d98332c43cba8296b22af87c4a3b755aa68e",
+    "moment_utc": "2026-01-01T12:00:00Z"
+  }
+}

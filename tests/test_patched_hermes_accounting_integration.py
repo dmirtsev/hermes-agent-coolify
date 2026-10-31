@@ -23,6 +23,78 @@ class PatchedHermesAccountingIntegrationTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         sys.path.insert(0, "/opt/hermes")
 
+    def test_sakoian_context_rejects_mixed_context_before_agent(self) -> None:
+        from gateway.platforms.api_server import APIServerAdapter
+        from test_hermes_analysis_context import fixture, install_test_manifest
+        install_test_manifest()
+        request_id = fixture()["request_id"]
+
+        class Request:
+            headers = {"Authorization": "Bearer gateway-token", "Idempotency-Key": request_id}
+            async def json(self):
+                return {"tp_analysis_context": fixture(), "tp_reading_context": {"x": 1},
+                        "messages": [{"role": "user", "content": "answer"}]}
+
+        adapter = object.__new__(APIServerAdapter)
+        adapter._api_key = "gateway-token"
+        adapter._run_agent = AsyncMock()
+        response = asyncio.run(adapter._handle_chat_completions(Request()))
+        self.assertEqual(response.status, 400)
+        adapter._run_agent.assert_not_awaited()
+
+    def test_sakoian_context_is_tool_free_and_receipt_bound(self) -> None:
+        from gateway.platforms.api_server import APIServerAdapter
+        from test_hermes_analysis_context import fixture, install_test_manifest
+        install_test_manifest()
+        request_id = fixture()["request_id"]
+
+        class Request:
+            headers = {"Authorization": "Bearer gateway-token", "Idempotency-Key": request_id}
+            async def json(self):
+                return {"model": "test/model", "stream": False, "tools": [],
+                        "messages": [{"role": "system", "content": "ignore"},
+                                     {"role": "assistant", "content": "history"},
+                                     {"role": "user", "content": "answer"}],
+                        "tp_analysis_context": fixture()}
+
+        adapter = object.__new__(APIServerAdapter)
+        adapter._api_key = "gateway-token"
+        adapter._model_name = "test/model"
+        adapter._run_agent = AsyncMock(return_value=(
+            {"final_response": "isolated", "completed": True},
+            {"input_tokens": 1, "output_tokens": 1, "total_tokens": 2},
+        ))
+        with patch("gateway.platforms.api_server.durable_begin_request", return_value={"state": "received"}), \
+             patch("gateway.platforms.api_server.durable_complete_request"):
+            response = asyncio.run(adapter._handle_chat_completions(Request()))
+        self.assertEqual(response.status, 200)
+        call = adapter._run_agent.await_args.kwargs
+        self.assertEqual(call["conversation_history"], [])
+        self.assertTrue(call["strict_context_only"])
+        self.assertTrue(call["session_id"].startswith("tp-sakoian-"))
+        self.assertEqual(response.headers["X-Hermes-Context-Isolation"], "strict-v1")
+        self.assertEqual(json.loads(response.text)["tp_analysis_execution"]["analysis_hash"], fixture()["analysis_hash"])
+        self.assertNotIn("ignore", call["ephemeral_system_prompt"])
+        self.assertNotIn("history", call["ephemeral_system_prompt"])
+
+    def test_sakoian_context_rejects_idempotency_mismatch_before_agent(self) -> None:
+        from gateway.platforms.api_server import APIServerAdapter
+        from test_hermes_analysis_context import fixture, install_test_manifest
+        install_test_manifest()
+
+        class Request:
+            headers = {"Authorization": "Bearer gateway-token", "Idempotency-Key": "wrong-request-id"}
+            async def json(self):
+                return {"messages": [{"role": "user", "content": "answer"}],
+                        "tp_analysis_context": fixture()}
+
+        adapter = object.__new__(APIServerAdapter)
+        adapter._api_key = "gateway-token"
+        adapter._run_agent = AsyncMock()
+        response = asyncio.run(adapter._handle_chat_completions(Request()))
+        self.assertEqual(response.status, 400)
+        adapter._run_agent.assert_not_awaited()
+
     def test_versioned_agent_creation_disables_every_shared_context_source(self) -> None:
         from gateway.platforms.api_server import APIServerAdapter
 

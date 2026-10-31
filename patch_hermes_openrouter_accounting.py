@@ -682,68 +682,6 @@ logger = logging.getLogger(__name__)
 
 replace_once(
     API_SERVER,
-    '''        try:
-            body = await request.json()
-        except (json.JSONDecodeError, Exception):
-            return web.json_response(_openai_error("Invalid JSON in request body"), status=400)
-
-        messages = body.get("messages")
-''',
-    '''        try:
-            body = await request.json()
-        except (json.JSONDecodeError, Exception):
-            return web.json_response(_openai_error("Invalid JSON in request body"), status=400)
-
-        try:
-            sakoian_analysis_guard = prepare_sakoian_analysis_context(
-                body.get("tp_analysis_context") if isinstance(body, dict) else None,
-                expected_request_id=request.headers.get("Idempotency-Key"),
-            )
-        except SakoianContextError as exc:
-            return web.json_response(_openai_error(str(exc), code="invalid_tp_analysis_context"), status=400)
-        if sakoian_analysis_guard is not None and (
-            body.get("tp_reading_context") is not None or body.get("tp_hermes_policy") is not None
-            or body.get("tp_execution_mode") is not None or body.get("tools") or body.get("stream")
-        ):
-            return web.json_response(_openai_error("Sakoian analysis requires isolated non-streaming context", code="invalid_tp_analysis_context"), status=400)
-
-        messages = body.get("messages")
-''',
-    "sakoian analysis context guard",
-)
-
-replace_once(
-    API_SERVER,
-    '''        if versioned_method_guard is not None:
-            # Caller system/history content is not an authorized knowledge
-            # source for an exact-method execution.
-            system_prompt = versioned_method_guard.prompt
-''',
-    '''        if sakoian_analysis_guard is not None:
-            system_prompt = sakoian_analysis_guard.prompt
-        elif versioned_method_guard is not None:
-            # Caller system/history content is not an authorized knowledge
-            # source for an exact-method execution.
-            system_prompt = versioned_method_guard.prompt
-''',
-    "sakoian analysis prompt injection",
-)
-
-replace_once(
-    API_SERVER,
-    '''        if versioned_method_guard is not None:
-            response_data["tp_method_execution"] = versioned_method_guard.receipt
-''',
-    '''        if sakoian_analysis_guard is not None:
-            response_data["tp_analysis_execution"] = sakoian_analysis_guard.receipt
-        if versioned_method_guard is not None:
-            response_data["tp_method_execution"] = versioned_method_guard.receipt
-''',
-    "sakoian analysis receipt",
-)
-
-replace_once(
-    API_SERVER,
     '''        gateway_session_key: Optional[str] = None,
     ) -> Any:
 ''',
@@ -1441,4 +1379,62 @@ replace_once(
     "Responses API accounting response",
 )
 
-print("patched pinned Hermes OpenRouter accounting seam")
+
+# Apply Sakoian only after the original strict-context seams exist. Keep all
+# earlier anchors unchanged so the reviewed upstream patch remains fail-closed.
+replace_once(
+    API_SERVER,
+    '        try:\n            versioned_method_guard = prepare_versioned_method_context(',
+    '''        try:
+            sakoian_analysis_guard = prepare_sakoian_analysis_context(
+                body.get("tp_analysis_context") if isinstance(body, dict) else None,
+                expected_request_id=request.headers.get("Idempotency-Key"),
+            )
+        except SakoianContextError as exc:
+            return web.json_response(_openai_error(str(exc), code="invalid_tp_analysis_context"), status=400)
+        if sakoian_analysis_guard is not None and (
+            any(body.get(key) is not None for key in ("tp_reading_context", "tp_hermes_policy", "tp_execution_mode", "tp_answer_format"))
+            or body.get("tools") or body.get("stream") or body.get("tp_dialogue_mode", "standard") != "standard"
+        ):
+            return web.json_response(_openai_error("Sakoian requires isolated non-streaming context", code="invalid_tp_analysis_context"), status=400)
+        try:
+            versioned_method_guard = prepare_versioned_method_context(''',
+    "Sakoian request admission",
+)
+replace_once(
+    API_SERVER,
+    '''        if versioned_method_guard is not None:
+            # Caller system/history content''',
+    '''        if sakoian_analysis_guard is not None:
+            system_prompt = sakoian_analysis_guard.prompt
+        elif versioned_method_guard is not None:
+            # Caller system/history content''',
+    "Sakoian prompt isolation",
+)
+replace_once(
+    API_SERVER,
+    '''        if versioned_method_guard is not None:
+            session_id = versioned_method_guard.isolated_session_id''',
+    '''        if sakoian_analysis_guard is not None:
+            session_id = sakoian_analysis_guard.isolated_session_id
+        elif versioned_method_guard is not None:
+            session_id = versioned_method_guard.isolated_session_id''',
+    "Sakoian session isolation",
+)
+source = API_SERVER.read_text()
+old = "versioned_method_guard is not None or strict_execution_context"
+if source.count(old) != 5:
+    raise SystemExit("Sakoian strict-context seam count drifted")
+API_SERVER.write_text(source.replace(old, "sakoian_analysis_guard is not None or " + old))
+replace_once(
+    API_SERVER,
+    '''        if versioned_method_guard is not None:
+            response_data["tp_method_execution"] = versioned_method_guard.receipt''',
+    '''        if sakoian_analysis_guard is not None:
+            response_data["tp_analysis_execution"] = sakoian_analysis_guard.receipt
+        if versioned_method_guard is not None:
+            response_data["tp_method_execution"] = versioned_method_guard.receipt''',
+    "Sakoian execution receipt",
+)
+print("patched pinned Hermes OpenRouter accounting and Sakoian seams")
+
