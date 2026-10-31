@@ -19,20 +19,22 @@ class PatchedManagedRepairTests(unittest.TestCase):
     def setUpClass(cls):
         sys.path.insert(0, '/opt/hermes')
 
-    def run_loop(self, candidates, *, overflow=False, validator_failure=False, reserve=None):
+    def run_loop(self, candidates, *, overflow=False, validator_failure=False, reserve=None, completion=8192):
         from gateway.platforms.api_server import APIServerAdapter
         from run_agent import AIAgent
         supplied = body(True)
         supplied.update(model='openai/gpt-6-luna', tp_dialogue_model='gpt_luna',
             response_format={'type':'json_object'},
             tp_context_budget={'contract':'hermes-context-budget-v1','profile':'natal_transit','inputBudget':128000})
+        if completion == 32768:
+            supplied['tp_context_budget'] = {'contract':'hermes-context-budget-v2','profile':'natal_transit', 'inputBudget':320000, 'completionTokens':32768}
         request_key = None
         def admission_receipt(messages):
             from agent.context_budget import digest
-            return {'contract':'hermes-context-budget-v1','model':supplied['model'],
+            return {'contract':supplied['tp_context_budget']['contract'],'model':supplied['model'],
                 'route':'test','counter':'test','counterRevision':'1','accuracy':'calibrated',
-                'inputTokens':sum(len(m['content']) for m in messages), 'inputBudget':128000,
-                'completionTokens':8192,'marginTokens':6400,'contextWindow':1000000,
+                'inputTokens':(271999 if len(messages) == len(supplied['messages']) else 272000) if completion == 32768 else sum(len(m['content']) for m in messages), 'inputBudget':320000 if completion == 32768 else 128000,
+                'completionTokens':completion,'marginTokens':16000 if completion == 32768 else 6400,'contextWindow':1000000,
                 'messagesSha256':digest(messages),'admitted':True,'reason':None}
         if reserve is not None:
             from agent.durable_accounting import begin_request
@@ -42,6 +44,9 @@ class PatchedManagedRepairTests(unittest.TestCase):
             supplied['tp_attempt_reserve']={'contract':'hermes-attempt-reserve-v1',
                 'requestId':request_key,'callbackUrl':'https://test.astrogeoagent.ru/api/internal/hermes/attempt-reserve',
                 'token':'a'*64,'initialAdmission':admission_receipt(supplied['messages'])}
+            if completion == 32768:
+                supplied['tp_attempt_reserve']['pricePolicyVersion']='hermes-provider-ceilings-v2'
+                supplied['tp_context_admission']=admission_receipt(supplied['messages'])
         agent = AIAgent(model=supplied['model'], provider='openrouter',
             api_key='synthetic-unused-key', base_url='https://example.invalid/v1',
             enabled_toolsets=[], max_iterations=3, max_tokens=8192,
@@ -131,6 +136,27 @@ class PatchedManagedRepairTests(unittest.TestCase):
                     self.assertEqual(result['error'],'hermes_attempt_reserve_'+outcome)
                 accounting=usage['_hermes_openrouter_accounting']
                 self.assertEqual(accounting['cost']['amount_micro_usd'],len(calls)*10)
+
+    def test_full_output_and_funded_price_band_in_pinned_loop(self):
+        bad=reply('{{s2}} Повторное прохождение утром.')
+        for outcome in ('approved','denied','unavailable'):
+            with self.subTest(outcome=outcome):
+                reserve={'outcome':outcome,'receipts':[]}
+                result,usage,calls,_,original=self.run_loop([(bad,'stop'),(reply(),'stop')], reserve=reserve, completion=32768)
+                self.assertEqual(len(calls),2 if outcome=='approved' else 1)
+                self.assertEqual(len(reserve['receipts']),1)
+                self.assertEqual(reserve['receipts'][0][1]['inputTokens'],272000)
+                self.assertEqual(original['tp_context_admission']['inputTokens'],271999)
+                self.assertEqual(calls[0].get('max_tokens',calls[0].get('max_completion_tokens')),32768)
+                self.assertFalse('max_tokens' in calls[0] and 'max_completion_tokens' in calls[0])
+                self.assertEqual(calls[0]['extra_body']['provider']['max_price'],{'prompt':0.125,'completion':0.5})
+                if outcome=='approved':
+                    self.assertEqual(calls[1].get('max_tokens',calls[1].get('max_completion_tokens')),32768)
+                    self.assertFalse('max_tokens' in calls[1] and 'max_completion_tokens' in calls[1])
+                    self.assertEqual(calls[1]['extra_body']['provider']['max_price'],{'prompt':0.25,'completion':0.75})
+                else:
+                    self.assertEqual(result['error'],'hermes_attempt_reserve_'+outcome)
+                self.assertEqual(usage['_hermes_openrouter_accounting']['cost']['amount_micro_usd'],len(calls)*10)
 
     def test_reservation_failure_response_keeps_actual_charge(self):
         from gateway.platforms.api_server import APIServerAdapter

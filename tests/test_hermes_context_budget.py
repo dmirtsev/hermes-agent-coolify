@@ -219,6 +219,20 @@ class ContextBudgetTests(unittest.TestCase):
         smaller[MODEL]["contextWindow"] -= 1
         self.assertEqual(budget.prepare_admission(body(), smaller, lambda *args: 128000)["reason"], "hermes_context_window_overflow")
 
+    def test_v2_completion_is_included_in_window_and_cannot_downgrade(self):
+        value = body()
+        value["tp_context_budget"] = {"contract": budget.CONTRACT_V2, "profile": "natal_transit", "inputBudget": 320000, "completionTokens": 32768}
+        profiles = copy.deepcopy(PROFILE)
+        profiles[MODEL]["contextWindow"] = 368768
+        receipt = budget.prepare_admission(value, profiles, lambda *args: 320000)
+        self.assertTrue(receipt["admitted"])
+        self.assertEqual(receipt["completionTokens"], 32768)
+        profiles[MODEL]["contextWindow"] -= 1
+        self.assertEqual(budget.prepare_admission(value, profiles, lambda *args: 320000)["reason"], "hermes_context_window_overflow")
+        value["tp_context_budget"]["completionTokens"] = 8192
+        with self.assertRaises(budget.ContextBudgetError):
+            budget.prepare_admission(value, profiles, lambda *args: 1)
+
     def test_input_overflow_does_not_drop_a_row(self):
         original = body()
         receipt = budget.prepare_admission(original, PROFILE, lambda *args: 128001)

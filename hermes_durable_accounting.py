@@ -1130,6 +1130,19 @@ def _safe_request_view(request_key: str, *, include_events: bool = True) -> dict
         },
         "accounting": accounting,
     }
+    # Only expose a narrow, non-sensitive conclusion. Keep the result text,
+    # messages and validator feedback private, and never infer provider cost.
+    managed_failures = {"managed_transit_validation_exhausted", "managed_transit_validation_unavailable"}
+    if (row["state"] == "completed" and isinstance(stored_result, dict)
+            and stored_result.get("failed") is True
+            and stored_result.get("completed") is False
+            and stored_result.get("final_response") == ""
+            and isinstance(stored_result.get("error"), str)
+            and stored_result["error"] in managed_failures):
+        result["terminal_outcome"] = {
+            "code": stored_result["error"],
+            "answer_available": False,
+        }
     if provider_rejected_unbilled:
         result["terminal_outcome"] = {
             "code": PROVIDER_TEMPORARILY_UNAVAILABLE,
