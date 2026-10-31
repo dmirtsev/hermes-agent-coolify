@@ -5,6 +5,7 @@ contract in :mod:`grounded_narrative`; it only explains why that contract was
 not met. Only code/path are public; details belong in the private sidecar.
 """
 import json
+import math
 from collections import Counter
 
 MAX_BYTES = 32_000
@@ -30,6 +31,14 @@ def _duplicate_hook(duplicates):
     return hook
 
 
+def _actual(value):
+    # The raw plan preserves the exact value. Avoid recursively serializing a
+    # model-controlled container again inside the reason envelope.
+    if isinstance(value, (dict, list)):
+        return {"type":type(value).__name__, "length":len(value)}
+    return value
+
+
 def diagnose_plan(raw_text, catalogue):
     """Return a stable reason for a plan rejected by ``parse_plan``.
 
@@ -50,8 +59,14 @@ def diagnose_plan(raw_text, catalogue):
     duplicates = []
     class _NonFinite(ValueError):
         pass
+    def finite_float(text):
+        value = float(text)
+        if not math.isfinite(value):
+            raise _NonFinite()
+        return value
     try:
         value = json.loads(raw_text, object_pairs_hook=_duplicate_hook(duplicates),
+                           parse_float=finite_float,
                            parse_constant=lambda x: (_ for _ in ()).throw(_NonFinite(x)))
     except json.JSONDecodeError as exc:
         return _result("malformed_json", "$", line=exc.lineno, column=exc.colno,
@@ -86,10 +101,10 @@ def diagnose_plan(raw_text, catalogue):
         return _result("extra_field", "$", fields=extra)
     if value.get("schema_version") != PLAN_SCHEMA:
         return _result("wrong_schema_version", "$.schema_version",
-                       expected=PLAN_SCHEMA, actual=value.get("schema_version"))
+                       expected=PLAN_SCHEMA, actual=_actual(value.get("schema_version")))
     if value.get("catalogue_hash") != expected["catalogue_hash"]:
         return _result("catalogue_hash_mismatch", "$.catalogue_hash",
-                       expected=expected["catalogue_hash"], actual=value.get("catalogue_hash"))
+                       expected=expected["catalogue_hash"], actual=_actual(value.get("catalogue_hash")))
 
     for field in ("group_order", "event_order"):
         actual = value.get(field)

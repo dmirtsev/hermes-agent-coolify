@@ -61,6 +61,7 @@ class RejectionDiagnosticsTests(unittest.TestCase):
             ('1' * 5000, 'invalid_json_value'),
             ('{"x":Infinity}', 'nonfinite_json'),
             ('{"x":-Infinity}', 'nonfinite_json'),
+            ('{"catalogue_hash":1e999}', 'nonfinite_json'),
             ('{"PRIVATE_MODEL_TEXT":0,"PRIVATE_MODEL_TEXT":1}', 'duplicate_json_key'),
             (json.dumps({**self.valid, 'schema_version':'PRIVATE_MODEL_TEXT'}), 'wrong_schema_version'),
             (json.dumps({**self.valid, 'event_order':[1]}), 'wrong_order_element_type'),

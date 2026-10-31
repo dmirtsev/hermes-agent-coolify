@@ -1,6 +1,7 @@
 """Real patched HTTP handler, fake SDK, and private temporary journals only."""
 import asyncio
 import copy
+from contextlib import closing
 import hashlib
 import json
 import os
@@ -73,7 +74,7 @@ class PatchedSakoianDiagnosticsTests(unittest.TestCase):
             self.assertEqual(body['hermes_accounting']['tokens']['total'], 22)
             self.assertEqual(client.chat.completions.create.call_count, 1)
             agent.run_conversation.assert_not_called()
-            with sqlite3.connect(Path(directory) / 'accounting.sqlite') as db:
+            with closing(sqlite3.connect(Path(directory) / 'accounting.sqlite')) as db:
                 self.assertEqual(db.execute('SELECT count(*) FROM accounting_evidence_event '
                     "WHERE kind='generation'").fetchone()[0], 1)
                 stored_result = json.loads(db.execute('SELECT result_json FROM accounting_request').fetchone()[0])
@@ -109,6 +110,7 @@ class PatchedSakoianDiagnosticsTests(unittest.TestCase):
         from test_sakoian_grounded_call import catalogue
         plan = default_plan(catalogue())
         cases = [('{\n PRIVATE_MODEL_TEXT', 'malformed_json'),
+                 ('{"catalogue_hash":1e999}', 'nonfinite_json'),
                  ('{"x":1,"x":2}', 'duplicate_json_key'),
                  ('[[]', 'malformed_json')]
         for field, value, reason in (

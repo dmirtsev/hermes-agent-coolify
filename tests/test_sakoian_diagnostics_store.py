@@ -1,4 +1,5 @@
 import json
+from contextlib import closing
 import os
 import sqlite3
 import stat
@@ -20,7 +21,7 @@ class DiagnosticsStoreTests(unittest.TestCase):
         self.env = patch.dict(os.environ, {"HERMES_ACCOUNTING_JOURNAL_PATH": str(self.journal)})
         self.env.start()
         accounting.ensure_journal()
-        with sqlite3.connect(self.journal) as db:
+        with closing(sqlite3.connect(self.journal)) as db, db:
             db.execute("INSERT INTO accounting_request(request_key,payload_sha256,state,created_at,updated_at) VALUES(?,?,?,?,?)", ("r1", "payload-hash", "completed", 0, 0))
             db.execute("INSERT INTO accounting_evidence_event(request_key,kind,generation_id,evidence_json,created_at) VALUES(?,?,?,?,?)", ("r1", "generation", "gen1", "{}", 0))
 
@@ -114,7 +115,7 @@ class DiagnosticsStoreTests(unittest.TestCase):
             with self.subTest(kwargs=kwargs), self.assertRaises(diagnostics.DiagnosticsError) as exc:
                 self.save('original', **kwargs)
             self.assertEqual(exc.exception.code, 'diagnostics_conflict')
-        with sqlite3.connect(self.journal) as db:
+        with closing(sqlite3.connect(self.journal)) as db, db:
             db.execute("UPDATE accounting_request SET payload_sha256='different' WHERE request_key='r1'")
         with self.assertRaises(diagnostics.DiagnosticsError) as exc:
             self.save('original')
