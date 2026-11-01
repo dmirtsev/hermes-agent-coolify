@@ -21,7 +21,7 @@ class PatchedManagedRepairTests(unittest.TestCase):
     def setUpClass(cls):
         sys.path.insert(0, '/opt/hermes')
 
-    def run_loop(self, candidates, *, overflow=False, validator_failure=False, reserve=None, completion=8192, medium=False):
+    def run_loop(self, candidates, *, overflow=False, validator_failure=False, reserve=None, completion=8192, medium=False, deployment='test'):
         from gateway.platforms.api_server import APIServerAdapter
         from run_agent import AIAgent
         supplied = body(True)
@@ -33,6 +33,8 @@ class PatchedManagedRepairTests(unittest.TestCase):
         if medium:
             supplied['tp_reasoning_profile']='hermes-reasoning-medium-v1'
         request_key = None
+        callback_url = ('https://astrotochka.ru' if deployment == 'production' else
+                        'https://test.astrogeoagent.ru') + '/api/internal/hermes/attempt-reserve'
         def admission_receipt(messages):
             from agent.context_budget import digest
             return {'contract':supplied['tp_context_budget']['contract'],'model':supplied['model'],
@@ -46,7 +48,7 @@ class PatchedManagedRepairTests(unittest.TestCase):
             begin_request(request_key, 'a'*64)
             supplied['tp_request_id']=request_key
             supplied['tp_attempt_reserve']={'contract':'hermes-attempt-reserve-v1',
-                'requestId':request_key,'callbackUrl':'https://test.astrogeoagent.ru/api/internal/hermes/attempt-reserve',
+                'requestId':request_key,'callbackUrl':callback_url,
                 'token':'a'*64,'initialAdmission':admission_receipt(supplied['messages'])}
             if completion == 32768:
                 supplied['tp_attempt_reserve']['pricePolicyVersion']='hermes-provider-ceilings-v2'
@@ -99,6 +101,7 @@ class PatchedManagedRepairTests(unittest.TestCase):
                     'requestId':data['requestId'],'attempt':data['attempt'],
                     'messagesSha256':data['admission']['messagesSha256']}).encode()
         def callback(request,timeout):
+            self.assertEqual(request.full_url, callback_url)
             data=json.loads(request.data)
             reserve['receipts'].append((data['attempt'],copy.deepcopy(data['admission'])))
             if reserve['outcome']=='unavailable': raise TimeoutError()
@@ -108,7 +111,9 @@ class PatchedManagedRepairTests(unittest.TestCase):
                 raise urllib.error.HTTPError('https://test.invalid',status,'',{},io.BytesIO(json.dumps({'error':code}).encode()))
             return CallbackResponse(request)
         with patch('agent.context_budget.urllib.request.build_opener',return_value=SimpleNamespace(open=callback)), patch('agent.conversation_loop.admit_provider_call',side_effect=capture_guard), patch('agent.context_budget.prepare_admission',side_effect=admission), patch.dict(os.environ,{
-                'HERMES_RUNTIME_TIER':'economy','HERMES_RUNTIME_ID':'synthetic-managed-test'}):
+                'HERMES_RUNTIME_TIER':'economy','HERMES_RUNTIME_ID':'synthetic-managed-test',
+                'DEPLOYMENT_ENVIRONMENT': deployment,
+                'HERMES_ATTEMPT_RESERVE_CALLBACK_URL': callback_url}):
             if validator_failure:
                 with patch('agent.context_budget.managed_transit_issues',side_effect=RuntimeError('synthetic internal failure')):
                     result,usage=asyncio.run(adapter._run_agent(user_message=supplied['messages'][1]['content'],
@@ -123,6 +128,20 @@ class PatchedManagedRepairTests(unittest.TestCase):
                     managed_response_format=supplied['response_format'],managed_continuation=True,
                     context_budget_body=supplied, accounting_request_key=request_key))
         return result,usage,calls,checks,supplied
+
+    def test_production_callback_and_full_output_use_real_pinned_repair_loop(self):
+        reserve = {'outcome': 'approved', 'receipts': []}
+        result, usage, calls, _, original = self.run_loop(
+            [(reply('{{s2}} Повторное прохождение утром.'), 'stop'), (reply(), 'stop')],
+            reserve=reserve, completion=32768, deployment='production')
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(len(reserve['receipts']), 1)
+        self.assertEqual(original['tp_attempt_reserve']['callbackUrl'],
+                         'https://astrotochka.ru/api/internal/hermes/attempt-reserve')
+        self.assertEqual(calls[0]['messages'], original['messages'])
+        self.assertEqual(calls[1]['messages'][:2], original['messages'])
+        self.assertEqual(calls[1].get('max_tokens', calls[1].get('max_completion_tokens')), 32768)
+        self.assertEqual(usage['_hermes_openrouter_accounting']['cost']['amount_micro_usd'], 20)
 
     def test_reservation_gate_in_real_loop_preserves_accounting_and_context(self):
         bad=reply('{{s2}} Повторное прохождение утром.')

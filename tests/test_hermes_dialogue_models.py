@@ -113,10 +113,12 @@ class DialogueModelsTests(unittest.TestCase):
         self.assertEqual(result[0]["request_overrides"]["extra_body"]["reasoning"], {"effort": "medium"})
         self.assertEqual(result[0]["max_tokens"], 8192)
 
-    def test_terra_is_not_a_production_or_natal_route(self):
+    def test_terra_requires_enabled_known_deployment_and_transit_context(self):
         body = {"model": "openai/gpt-6.1-terra", "tp_dialogue_model": "gpt_terra",
                 "tp_context_budget": {"profile": "natal_transit"}, "tp_managed_method_context": {"synthetic": True}}
-        for change in [{"DEPLOYMENT_ENVIRONMENT": "production"}, {"HERMES_TERRA_PERIODS_ENABLED": "false"}]:
+        self.assertEqual(models.validate_dialogue_model(body, "synthetic", {
+            **TERRA_ENABLED, "DEPLOYMENT_ENVIRONMENT": "production"}), "gpt_terra")
+        for change in [{"DEPLOYMENT_ENVIRONMENT": "staging"}, {"HERMES_TERRA_PERIODS_ENABLED": "false"}]:
             with self.assertRaises(models.DialogueModelError):
                 models.validate_dialogue_model(body, "synthetic", {**TERRA_ENABLED, **change})
         for change in [{"tp_context_budget": {"profile": "natal"}}, {"tp_managed_method_context": None}]:
@@ -245,7 +247,7 @@ class PatchedConstructorTests(unittest.TestCase):
 
 
 class DeepSeekFlashPlusGuardTests(unittest.TestCase):
-    def test_feature_flag_is_test_only_and_not_public(self):
+    def test_feature_flag_requires_capability_and_policy_in_both_deployments(self):
         env = {**ENABLED, "DEPLOYMENT_ENVIRONMENT": "test",
                "HERMES_DEEPSEEK_FLASH_PLUS_ENABLED": "true",
                "HERMES_DEEPSEEK_FLASH_PLUS_BACKEND_CAPABILITY": "true",
@@ -254,8 +256,19 @@ class DeepSeekFlashPlusGuardTests(unittest.TestCase):
         self.assertTrue(models.deepseek_flash_plus_enabled(env))
         with patch.dict(os.environ, env, clear=True):
             self.assertIn("deepseek_flash_plus", models.public_dialogue_models()["codes"])
+        for deployment in ("test", "production"):
+            configured = {**env, "DEPLOYMENT_ENVIRONMENT": deployment}
+            self.assertTrue(models.deepseek_flash_plus_enabled(configured))
+            for key in ("HERMES_DEEPSEEK_FLASH_PLUS_ENABLED",
+                        "HERMES_DEEPSEEK_FLASH_PLUS_BACKEND_CAPABILITY",
+                        "HERMES_DEEPSEEK_FLASH_PLUS_MAX_CHARGE_KOPECKS",
+                        "HERMES_DEEPSEEK_FLASH_PLUS_PRICE_POLICY_VERSION"):
+                missing = dict(configured)
+                missing.pop(key)
+                self.assertFalse(models.deepseek_flash_plus_enabled(missing))
+        self.assertFalse(models.deepseek_flash_plus_enabled({**env, "DEPLOYMENT_ENVIRONMENT": "staging"}))
 
-    def test_feature_flag_is_disabled_outside_test(self):
+    def test_production_flag_without_capability_is_disabled(self):
         env = {**ENABLED, "DEPLOYMENT_ENVIRONMENT": "production",
                "HERMES_DEEPSEEK_FLASH_PLUS_ENABLED": "true"}
         self.assertFalse(models.deepseek_flash_plus_enabled(env))

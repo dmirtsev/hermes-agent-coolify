@@ -47,14 +47,14 @@ def choice_enabled(env=None):
 
 def terra_enabled(env=None):
     env = os.environ if env is None else env
-    return (choice_enabled(env) and env.get("DEPLOYMENT_ENVIRONMENT") == "test"
+    return (choice_enabled(env) and env.get("DEPLOYMENT_ENVIRONMENT") in {"test", "production"}
             and env.get("HERMES_TERRA_PERIODS_ENABLED") == "true")
 
 
 def deepseek_flash_plus_enabled(env=None):
     env = os.environ if env is None else env
     raw_cap = env.get("HERMES_DEEPSEEK_FLASH_PLUS_MAX_CHARGE_KOPECKS")
-    return (choice_enabled(env) and env.get("DEPLOYMENT_ENVIRONMENT") == "test"
+    return (choice_enabled(env) and env.get("DEPLOYMENT_ENVIRONMENT") in {"test", "production"}
             and env.get("HERMES_DEEPSEEK_FLASH_PLUS_ENABLED") == "true"
             and env.get("HERMES_DEEPSEEK_FLASH_PLUS_BACKEND_CAPABILITY") == "true"
             and isinstance(raw_cap, str) and raw_cap.isdigit() and int(raw_cap) > 0

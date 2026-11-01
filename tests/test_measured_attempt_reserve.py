@@ -1,6 +1,7 @@
 import copy
 import io
 import json
+import os
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -20,6 +21,10 @@ def admission(messages):
 
 class AttemptReserveTests(unittest.TestCase):
     def setUp(self):
+        env = patch.dict(os.environ, {"DEPLOYMENT_ENVIRONMENT": "test",
+            "HERMES_ATTEMPT_RESERVE_CALLBACK_URL": ""})
+        env.start()
+        self.addCleanup(env.stop)
         self.messages = [{'role':'system','content':'full system'}, {'role':'user','content':'full input'}]
         self.descriptor = {'contract': budget.ATTEMPT_RESERVE_CONTRACT, 'requestId': 'r1',
             'callbackUrl': 'https://test.astrogeoagent.ru/api/internal/hermes/attempt-reserve',
