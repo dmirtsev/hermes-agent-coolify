@@ -23,6 +23,296 @@ class PatchedHermesAccountingIntegrationTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         sys.path.insert(0, "/opt/hermes")
 
+    def test_sakoian_actual_execution_never_enters_continuation_loop(self):
+        from gateway.platforms.api_server import APIServerAdapter
+        for finish in ('stop', 'length'):
+            with self.subTest(finish=finish):
+                client = Mock(); client.with_options.return_value = client
+                client.chat.completions.create.return_value = SimpleNamespace(
+                    id='single-sakoian-fixture', model='deepseek/deepseek-v4-flash',
+                    usage=SimpleNamespace(prompt_tokens=10,completion_tokens=5,total_tokens=15),
+                    choices=[SimpleNamespace(finish_reason=finish,message=SimpleNamespace(content='bounded text',tool_calls=None))])
+                agent = SimpleNamespace(provider='openrouter',model='deepseek/deepseek-v4-flash',
+                    base_url='https://openrouter.ai/api/v1',
+                    _ensure_primary_openai_client=Mock(return_value=client),
+                    run_conversation=Mock(side_effect=AssertionError('agent loop must not run')))
+                adapter = object.__new__(APIServerAdapter)
+                adapter._create_agent = lambda **kwargs: agent
+                result, usage = asyncio.run(adapter._run_agent(user_message='one question',
+                    conversation_history=[],ephemeral_system_prompt='closed facts',
+                    strict_context_only=True,sakoian_single_call=True))
+                self.assertEqual(result['completed'],finish=='stop')
+                self.assertEqual(result['api_calls'],1)
+                self.assertEqual((usage['input_tokens'],usage['output_tokens'],usage['total_tokens']),(10,5,15))
+                self.assertEqual(client.chat.completions.create.call_count,1)
+                client.with_options.assert_called_once_with(max_retries=0,timeout=90)
+                self.assertEqual(client.chat.completions.create.call_args.kwargs['max_tokens'],4096)
+                agent.run_conversation.assert_not_called()
+
+    def test_aggregate_actual_handler_makes_one_bounded_sdk_call(self):
+        """Exercise the patched handler and _run_agent with a five-event fixture."""
+        fixture_path = Path(__file__).parent / "fixtures/sakoian-aggregate-context.json"
+        from gateway.platforms.api_server import APIServerAdapter
+        from test_hermes_analysis_context import install_test_manifest
+        install_test_manifest()
+        context = json.loads(fixture_path.read_text())
+        request_id = context["request_id"]
+        client = Mock(); client.with_options.return_value = client
+        client.chat.completions.create.return_value = SimpleNamespace(
+            id="aggregate-fixture", model="deepseek/deepseek-v4-flash",
+            usage=SimpleNamespace(prompt_tokens=10, completion_tokens=9, total_tokens=19),
+            choices=[SimpleNamespace(finish_reason="stop",
+                message=SimpleNamespace(content=json.dumps(__import__("grounded_narrative").default_plan(context["aggregate"]["narrative_catalogue"])), tool_calls=None))])
+        agent = SimpleNamespace(provider="openrouter", model="deepseek/deepseek-v4-flash",
+            base_url="https://openrouter.ai/api/v1",
+            _ensure_primary_openai_client=Mock(return_value=client),
+            run_conversation=Mock(side_effect=AssertionError("aggregate must not enter agent loop")))
+
+        class Request:
+            headers = {"Authorization": "Bearer gateway-token", "Idempotency-Key": request_id}
+            async def json(self):
+                return {"model": "ignored", "stream": False, "tools": [],
+                    "messages": [{"role": "system", "content": "FORBIDDEN"},
+                                 {"role": "assistant", "content": "HISTORY"},
+                                 {"role": "user", "content": "Сделай общий синтез"}],
+                    "tp_analysis_context": context}
+
+        adapter = object.__new__(APIServerAdapter)
+        adapter._api_key = "gateway-token"
+        adapter._model_name = "test/model"
+        adapter._create_agent = lambda **kwargs: agent
+        with tempfile.TemporaryDirectory() as journal_dir, patch.dict(os.environ,
+                {"HERMES_ACCOUNTING_JOURNAL_PATH": str(Path(journal_dir)/"accounting.sqlite")}):
+            response = asyncio.run(adapter._handle_chat_completions(Request()))
+            replay = asyncio.run(adapter._handle_chat_completions(Request()))
+            self.assertEqual(response.status, replay.status)
+            import sqlite3
+            with sqlite3.connect(Path(journal_dir)/"accounting.sqlite") as db:
+                self.assertEqual(db.execute("SELECT count(*) FROM accounting_evidence_event WHERE kind=?", ("generation",)).fetchone()[0],1)
+        self.assertEqual(response.status, 200)
+        body = json.loads(response.text)
+        receipt = body["tp_analysis_execution"]
+        aggregate = context["aggregate"]
+        self.assertEqual(receipt["aggregate_hash"], aggregate["aggregate_hash"])
+        self.assertEqual(receipt["aspect_count"], 5)
+        self.assertEqual(receipt["group_count"], len(aggregate["projection"]["groups"]))
+        self.assertEqual(client.chat.completions.create.call_count, 1)
+        kwargs = client.chat.completions.create.call_args.kwargs
+        self.assertEqual(kwargs["max_tokens"], 4096)
+        self.assertFalse(kwargs["stream"])
+        self.assertEqual(kwargs["extra_body"]["reasoning"], {"enabled": False})
+        self.assertIn("AGGREGATE", kwargs["messages"][0]["content"])
+        self.assertNotIn("FORBIDDEN", kwargs["messages"][0]["content"])
+        self.assertNotIn("HISTORY", kwargs["messages"][0]["content"])
+        agent.run_conversation.assert_not_called()
+
+    def test_aggregate_actual_handler_does_not_report_length_as_complete(self):
+        fixture_path = Path(__file__).parent / "fixtures/sakoian-aggregate-context.json"
+        from gateway.platforms.api_server import APIServerAdapter
+        from test_hermes_analysis_context import install_test_manifest
+        install_test_manifest()
+        context = json.loads(fixture_path.read_text())
+        client = Mock(); client.with_options.return_value = client
+        client.chat.completions.create.return_value = SimpleNamespace(
+            id="aggregate-length", model="deepseek/deepseek-v4-flash",
+            usage=SimpleNamespace(prompt_tokens=2, completion_tokens=2, total_tokens=4),
+            choices=[SimpleNamespace(finish_reason="length",
+                message=SimpleNamespace(content="truncated", tool_calls=None))])
+        agent = SimpleNamespace(provider="openrouter", model="deepseek/deepseek-v4-flash",
+            base_url="https://openrouter.ai/api/v1",
+            _ensure_primary_openai_client=Mock(return_value=client),
+            run_conversation=Mock(side_effect=AssertionError("aggregate must not loop")))
+        class Request:
+            headers = {"Authorization": "Bearer gateway-token", "Idempotency-Key": context["request_id"]}
+            async def json(self):
+                return {"stream": False, "tools": [], "messages":[{"role":"user","content":"Q"}],
+                        "tp_analysis_context": context}
+        adapter = object.__new__(APIServerAdapter)
+        adapter._api_key = "gateway-token"; adapter._model_name = "test/model"
+        adapter._create_agent = lambda **kwargs: agent
+        with tempfile.TemporaryDirectory() as journal_dir, patch.dict(os.environ,
+                {"HERMES_ACCOUNTING_JOURNAL_PATH": str(Path(journal_dir)/"accounting.sqlite")}):
+            response = asyncio.run(adapter._handle_chat_completions(Request()))
+            replay = asyncio.run(adapter._handle_chat_completions(Request()))
+            self.assertEqual(response.status, replay.status)
+            import sqlite3
+            with sqlite3.connect(Path(journal_dir)/"accounting.sqlite") as db:
+                self.assertEqual(db.execute("SELECT count(*) FROM accounting_evidence_event WHERE kind=?", ("generation",)).fetchone()[0],1)
+        body = json.loads(response.text)
+        self.assertTrue(response.status != 200 or body.get("hermes", {}).get("completed") is False)
+        self.assertEqual(response.headers["X-Hermes-Completed"], "false")
+        self.assertEqual(client.chat.completions.create.call_count, 1)
+
+    def test_grounded_aggregate_replays_rendered_text_and_validation_metadata(self):
+        fixture_path = Path(__file__).parent / "fixtures/sakoian-aggregate-context.json"
+        from gateway.platforms.api_server import APIServerAdapter
+        from test_hermes_analysis_context import install_test_manifest
+        install_test_manifest()
+        context = json.loads(fixture_path.read_text())
+        catalogue = context["aggregate"]["narrative_catalogue"]
+        plan = {
+            "schema_version": "tp-astro-analysis.narrative-plan.v1",
+            "catalogue_hash": catalogue["catalogue_hash"],
+            "group_order": [g["group_id"] for g in catalogue["groups"]],
+            "event_order": [e["event_ref"] for e in catalogue["events"]],
+        }
+        client = Mock(); client.with_options.return_value = client
+        client.chat.completions.create.return_value = SimpleNamespace(
+            id="grounded-aggregate", model="deepseek/deepseek-v4-flash",
+            usage=SimpleNamespace(prompt_tokens=10, completion_tokens=9, total_tokens=19),
+            choices=[SimpleNamespace(finish_reason="stop", message=SimpleNamespace(
+                content=json.dumps(plan), tool_calls=None))])
+        agent = SimpleNamespace(provider="openrouter", model="deepseek/deepseek-v4-flash",
+            base_url="https://openrouter.ai/api/v1",
+            _ensure_primary_openai_client=Mock(return_value=client),
+            run_conversation=Mock(side_effect=AssertionError("aggregate must not enter agent loop")))
+
+        class Request:
+            headers = {"Authorization": "Bearer gateway-token",
+                       "Idempotency-Key": context["request_id"]}
+            async def json(self):
+                return {"stream": False, "tools": [],
+                    "messages": [{"role": "user", "content": "Синтез"}],
+                    "tp_analysis_context": context}
+
+        adapter = object.__new__(APIServerAdapter)
+        adapter._api_key = "gateway-token"; adapter._model_name = "test/model"
+        adapter._create_agent = lambda **kwargs: agent
+        with tempfile.TemporaryDirectory() as journal_dir, patch.dict(os.environ,
+                {"HERMES_ACCOUNTING_JOURNAL_PATH": str(Path(journal_dir)/"accounting.sqlite")}):
+            response = asyncio.run(adapter._handle_chat_completions(Request()))
+            replay = asyncio.run(adapter._handle_chat_completions(Request()))
+            self.assertEqual(json.loads(response.text).get("choices"), json.loads(replay.text).get("choices"))
+            self.assertEqual(json.loads(response.text).get("tp_analysis_validation"), json.loads(replay.text).get("tp_analysis_validation"))
+            import sqlite3
+            with sqlite3.connect(Path(journal_dir)/"accounting.sqlite") as db:
+                self.assertEqual(db.execute("SELECT count(*) FROM accounting_evidence_event WHERE kind=?", ("generation",)).fetchone()[0], 1)
+        self.assertEqual(response.status, 200)
+        body = json.loads(response.text)
+        self.assertEqual(body["tp_analysis_validation"]["status"], "passed")
+        self.assertEqual(body["tp_analysis_validation"]["catalogue_hash"], catalogue["catalogue_hash"])
+        self.assertTrue(body["choices"][0]["message"]["content"])
+        self.assertEqual(client.chat.completions.create.call_count, 1)
+
+    def test_grounded_aggregate_rejects_old_free_prose_and_replays_failure(self):
+        fixture_path = Path(__file__).parent / "fixtures/sakoian-aggregate-context.json"
+        from gateway.platforms.api_server import APIServerAdapter
+        from test_hermes_analysis_context import install_test_manifest
+        install_test_manifest()
+        context = json.loads(fixture_path.read_text())
+        client = Mock(); client.with_options.return_value = client
+        client.chat.completions.create.return_value = SimpleNamespace(
+            id="grounded-invalid", model="deepseek/deepseek-v4-flash",
+            usage=SimpleNamespace(prompt_tokens=10, completion_tokens=12, total_tokens=22),
+            choices=[SimpleNamespace(finish_reason="stop", message=SimpleNamespace(
+                content="Юпитер доминирует, а квадрат к самому себе не относится к наталу.",
+                tool_calls=None))])
+        agent = SimpleNamespace(provider="openrouter", model="deepseek/deepseek-v4-flash",
+            base_url="https://openrouter.ai/api/v1",
+            _ensure_primary_openai_client=Mock(return_value=client),
+            run_conversation=Mock(side_effect=AssertionError("aggregate must not enter agent loop")))
+
+        class Request:
+            headers = {"Authorization": "Bearer gateway-token",
+                       "Idempotency-Key": context["request_id"]}
+            async def json(self):
+                return {"stream": False, "tools": [],
+                    "messages": [{"role": "user", "content": "Синтез"}],
+                    "tp_analysis_context": context}
+
+        adapter = object.__new__(APIServerAdapter)
+        adapter._api_key = "gateway-token"; adapter._model_name = "test/model"
+        adapter._create_agent = lambda **kwargs: agent
+        with tempfile.TemporaryDirectory() as journal_dir, patch.dict(os.environ,
+                {"HERMES_ACCOUNTING_JOURNAL_PATH": str(Path(journal_dir)/"accounting.sqlite")}):
+            response = asyncio.run(adapter._handle_chat_completions(Request()))
+            replay = asyncio.run(adapter._handle_chat_completions(Request()))
+            self.assertEqual(json.loads(response.text).get("choices"), json.loads(replay.text).get("choices"))
+            self.assertEqual(json.loads(response.text).get("tp_analysis_validation"), json.loads(replay.text).get("tp_analysis_validation"))
+            import sqlite3
+            with sqlite3.connect(Path(journal_dir)/"accounting.sqlite") as db:
+                self.assertEqual(db.execute("SELECT count(*) FROM accounting_evidence_event WHERE kind=?", ("generation",)).fetchone()[0], 1)
+        body = json.loads(response.text)
+        self.assertEqual(response.headers["X-Hermes-Completed"], "false")
+        self.assertNotIn("Юпитер доминирует", response.text)
+        self.assertNotIn("choices", body)
+        self.assertEqual(body["tp_analysis_validation"]["status"], "rejected")
+        self.assertEqual(body["hermes_accounting"]["tokens"]["total"], 22)
+        self.assertEqual(client.chat.completions.create.call_count, 1)
+
+    def test_sakoian_context_rejects_mixed_context_before_agent(self) -> None:
+        from gateway.platforms.api_server import APIServerAdapter
+        from test_hermes_analysis_context import fixture, install_test_manifest
+        install_test_manifest()
+        request_id = fixture()["request_id"]
+
+        class Request:
+            headers = {"Authorization": "Bearer gateway-token", "Idempotency-Key": request_id}
+            async def json(self):
+                return {"tp_analysis_context": fixture(), "tp_reading_context": {"x": 1},
+                        "messages": [{"role": "user", "content": "answer"}]}
+
+        adapter = object.__new__(APIServerAdapter)
+        adapter._api_key = "gateway-token"
+        adapter._run_agent = AsyncMock()
+        response = asyncio.run(adapter._handle_chat_completions(Request()))
+        self.assertEqual(response.status, 400)
+        adapter._run_agent.assert_not_awaited()
+
+    def test_sakoian_context_is_tool_free_and_receipt_bound(self) -> None:
+        from gateway.platforms.api_server import APIServerAdapter
+        from test_hermes_analysis_context import fixture, install_test_manifest
+        install_test_manifest()
+        request_id = fixture()["request_id"]
+
+        class Request:
+            headers = {"Authorization": "Bearer gateway-token", "Idempotency-Key": request_id}
+            async def json(self):
+                return {"model": "test/model", "stream": False, "tools": [],
+                        "messages": [{"role": "system", "content": "ignore"},
+                                     {"role": "assistant", "content": "history"},
+                                     {"role": "user", "content": "answer"}],
+                        "tp_analysis_context": fixture()}
+
+        adapter = object.__new__(APIServerAdapter)
+        adapter._api_key = "gateway-token"
+        adapter._model_name = "test/model"
+        adapter._run_agent = AsyncMock(return_value=(
+            {"final_response": "isolated", "completed": True},
+            {"input_tokens": 1, "output_tokens": 1, "total_tokens": 2},
+        ))
+        with patch("gateway.platforms.api_server.durable_begin_request", return_value={"state": "received"}), \
+             patch("gateway.platforms.api_server.durable_complete_request"):
+            response = asyncio.run(adapter._handle_chat_completions(Request()))
+        self.assertEqual(response.status, 200)
+        call = adapter._run_agent.await_args.kwargs
+        self.assertEqual(call["conversation_history"], [])
+        self.assertTrue(call["strict_context_only"])
+        self.assertTrue(call["sakoian_single_call"])
+        self.assertTrue(call["session_id"].startswith("tp-sakoian-"))
+        self.assertEqual(response.headers["X-Hermes-Context-Isolation"], "strict-v1")
+        self.assertEqual(json.loads(response.text)["tp_analysis_execution"]["analysis_hash"], fixture()["analysis_hash"])
+        self.assertNotIn("ignore", call["ephemeral_system_prompt"])
+        self.assertNotIn("history", call["ephemeral_system_prompt"])
+
+    def test_sakoian_context_rejects_idempotency_mismatch_before_agent(self) -> None:
+        from gateway.platforms.api_server import APIServerAdapter
+        from test_hermes_analysis_context import fixture, install_test_manifest
+        install_test_manifest()
+
+        class Request:
+            headers = {"Authorization": "Bearer gateway-token", "Idempotency-Key": "wrong-request-id"}
+            async def json(self):
+                return {"messages": [{"role": "user", "content": "answer"}],
+                        "tp_analysis_context": fixture()}
+
+        adapter = object.__new__(APIServerAdapter)
+        adapter._api_key = "gateway-token"
+        adapter._run_agent = AsyncMock()
+        response = asyncio.run(adapter._handle_chat_completions(Request()))
+        self.assertEqual(response.status, 400)
+        adapter._run_agent.assert_not_awaited()
+
     def test_versioned_agent_creation_disables_every_shared_context_source(self) -> None:
         from gateway.platforms.api_server import APIServerAdapter
 
@@ -390,6 +680,95 @@ class PatchedHermesAccountingIntegrationTests(unittest.TestCase):
             self.assertEqual(messages[0], {"role": "system", "content": prompt})
             self.assertEqual(messages[1], {"role": "user", "content": "Current supplied context"})
             self.assertNotIn("FORBIDDEN-OLD", json.dumps(messages))
+
+    def test_budget_preflight_never_claims_or_dispatches(self):
+        from gateway.platforms.api_server import APIServerAdapter
+        prompt = "Count complete managed JSON context."
+        body = {"model": "openai/gpt-6-luna", "tp_dialogue_model": "gpt_luna", "stream": False,
+            "tp_execution_mode": "interpretation_facts_v1", "tp_answer_format": "hermes_managed_v1",
+            "tp_hermes_policy": {"version_id": "v", "version": 1, "sha256": "a" * 64,
+                "system_sha256": hashlib.sha256(prompt.encode()).hexdigest()},
+            "tp_context_budget": {"contract": "hermes-context-budget-v1", "profile": "natal_transit", "inputBudget": 128000},
+            "tp_preflight_only": True, "messages": [{"role": "system", "content": prompt}, {"role": "user", "content": "x" * 200000}]}
+        class Request:
+            headers = {"Authorization": "Bearer gateway-token", "Idempotency-Key": "synthetic-preflight"}
+            async def json(self): return body
+        adapter = object.__new__(APIServerAdapter)
+        adapter._api_key, adapter._model_name = "gateway-token", "test/model"
+        adapter._run_agent = AsyncMock()
+        with patch.dict(os.environ, {"HERMES_DIALOGUE_MODEL_CHOICE_ENABLED": "true", "HERMES_RUNTIME_TIER": "economy", "HERMES_FIXED_MODEL_PROVIDER": "openrouter"}), \
+             patch("gateway.platforms.api_server.prepare_admission", return_value={"admitted": False, "reason": "hermes_context_input_overflow"}), \
+             patch("gateway.platforms.api_server.durable_begin_request") as claim:
+            response = asyncio.run(adapter._handle_chat_completions(Request()))
+        self.assertEqual(response.status, 200)
+        self.assertEqual(json.loads(response.body)["admission"]["reason"], "hermes_context_input_overflow")
+        claim.assert_not_called()
+        adapter._run_agent.assert_not_awaited()
+
+    def test_v2_preflight_passes_strict_execution_guard_without_dispatch(self):
+        from gateway.platforms.api_server import APIServerAdapter
+        from agent.context_budget import prepare_admission
+        prompt = "Synthetic managed preflight."
+        body = {"model": "openai/gpt-6-luna", "tp_dialogue_model": "gpt_luna", "stream": False,
+            "tp_execution_mode": "interpretation_facts_v1", "tp_answer_format": "hermes_managed_v1",
+            "tp_hermes_policy": {"version_id": "v", "version": 1, "sha256": "a" * 64,
+                "system_sha256": hashlib.sha256(prompt.encode()).hexdigest()},
+            "tp_context_budget": {"contract": "hermes-context-budget-v2", "profile": "natal",
+                "inputBudget": 128000, "completionTokens": 32768},
+            "tp_preflight_only": True, "messages": [{"role": "system", "content": prompt},
+                                                    {"role": "user", "content": "Synthetic facts"}]}
+        class Request:
+            headers = {"Authorization": "Bearer gateway-token", "Idempotency-Key": "synthetic-v2-preflight"}
+            async def json(self): return body
+        adapter = object.__new__(APIServerAdapter)
+        adapter._api_key, adapter._model_name = "gateway-token", "test/model"
+        adapter._run_agent = AsyncMock()
+        with patch.dict(os.environ, {"HERMES_DIALOGUE_MODEL_CHOICE_ENABLED": "true", "HERMES_RUNTIME_TIER": "economy", "HERMES_FIXED_MODEL_PROVIDER": "openrouter"}), \
+             patch("gateway.platforms.api_server.prepare_admission", wraps=prepare_admission) as admission, \
+             patch("gateway.platforms.api_server.durable_begin_request") as claim:
+            response = asyncio.run(adapter._handle_chat_completions(Request()))
+            self.assertEqual(response.status, 200)
+            self.assertEqual(json.loads(response.body)["admission"]["completionTokens"], 32768)
+            self.assertTrue(json.loads(response.body)["admission"]["admitted"])
+            admission.assert_called_once_with(body)
+            claim.assert_not_called()
+            body["tp_context_budget"]["completionTokens"] = 8192
+            response = asyncio.run(adapter._handle_chat_completions(Request()))
+            self.assertEqual(response.status, 400)
+            admission.assert_called_once()
+        adapter._run_agent.assert_not_awaited()
+
+    def test_budget_real_provider_boundary_has_no_hidden_prompt_or_auto_replacement(self):
+        from gateway.platforms.api_server import APIServerAdapter
+        from run_agent import AIAgent
+        prompt = "Published managed JSON policy."
+        supplied = "FULL-CONTEXT " * 18000
+        body = {"model": "openai/gpt-6-luna", "tp_dialogue_model": "gpt_luna", "tp_answer_format": "hermes_managed_v1",
+          "tp_context_budget": {"contract": "hermes-context-budget-v1", "profile": "natal_transit", "inputBudget": 128000},
+          "response_format": {"type": "json_object"}, "messages": [{"role": "system", "content": prompt}, {"role": "user", "content": supplied}]}
+        agent = AIAgent(model=body["model"], provider="openrouter", api_key="synthetic-unused-key", base_url="https://example.invalid/v1",
+          enabled_toolsets=[], max_iterations=3, max_tokens=8192, skip_context_files=True, skip_memory=True, quiet_mode=True,
+          request_overrides={"response_format": body["response_format"], "extra_body": {"provider": {"only": ["openai"], "allow_fallbacks": False}, "service_tier": "default", "reasoning": {"effort": "high"}}},
+          ephemeral_system_prompt="FORBIDDEN-HIDDEN-PROMPT")
+        agent.prefill_messages = []
+        calls = []
+        content = '{"mode":"interpretation","paragraphs":[{"text":"A complete published part.","refs":[]}]}'
+        def fake_call(kwargs, *a, **k):
+            calls.append(kwargs)
+            return SimpleNamespace(id="synthetic-budget",model=body["model"],usage=SimpleNamespace(prompt_tokens=90000,completion_tokens=8192,total_tokens=98192),
+              choices=[SimpleNamespace(finish_reason="length",message=SimpleNamespace(content=content,tool_calls=None,reasoning=None,reasoning_content=None,reasoning_details=None))])
+        agent._interruptible_api_call = fake_call
+        agent._interruptible_streaming_api_call = fake_call
+        adapter = object.__new__(APIServerAdapter); adapter._create_agent = lambda **kwargs: agent
+        with patch("agent.context_budget.prepare_admission", return_value={"admitted": True}):
+            result, _ = asyncio.run(adapter._run_agent(user_message=supplied,conversation_history=[],strict_context_only=True,
+              managed_system_prompt=prompt,managed_response_format=body["response_format"],managed_continuation=True,context_budget_body=body))
+        self.assertEqual(len(calls),1)
+        self.assertEqual(calls[0]["extra_body"]["session_id"], agent.session_id)
+        self.assertEqual(calls[0]["messages"],body["messages"])
+        self.assertEqual(result["final_response"],content)
+        self.assertIn("truncated", result["error"])
+        self.assertFalse(agent.compression_enabled)
 
     def test_managed_length_continuation_joins_json_and_stops_after_two_calls(self) -> None:
         from gateway.platforms.api_server import APIServerAdapter
@@ -906,7 +1285,7 @@ class PatchedHermesAccountingIntegrationTests(unittest.TestCase):
         self.assertEqual(payload["hermes_accounting"]["model_execution"]["configured_model"], "fixed/configured-model")
         self.assertEqual(payload["hermes_accounting"]["model_execution"]["provider_reported_models"], ["executed/provider-model"])
         self.assertEqual(payload["hermes_accounting"]["cost"]["amount_micro_usd"], 10)
-        schema = json.loads((Path("/repo") / "deploy/hermes-tiers/usage-result.schema.json").read_text(encoding="utf-8"))
+        schema = json.loads((Path(__file__).resolve().parents[1] / "deploy/hermes-tiers/usage-result.schema.json").read_text(encoding="utf-8"))
         jsonschema.Draft202012Validator.check_schema(schema)
         jsonschema.validate(payload["hermes_accounting"], schema)
 

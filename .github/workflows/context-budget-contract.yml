@@ -1,0 +1,43 @@
+name: Hermes context budget contract
+on:
+  push:
+    branches: [codex/hermes-transit-context-20261027]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: hermes-context-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  pinned-runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Install schema validation dependency
+        run: python3 -m pip install jsonschema==4.26.0
+      - name: Wrapper unit contracts
+        run: python3 -m unittest discover -s tests
+      - name: Build exact pinned runtime
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          docker build --build-arg SOURCE_COMMIT="$SOURCE_SHA" --tag "hermes-context:$SOURCE_SHA" .
+      - name: Verify real patched runtime without external calls
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          docker run --rm --network none --workdir /opt/hermes \
+            --entrypoint /opt/hermes/.venv/bin/python \
+            "hermes-context:$SOURCE_SHA" -c \
+            'from agent.dialogue_models import validate_dialogue_model; assert validate_dialogue_model({}, None) is None'
+          docker run --rm --network none --workdir /qa \
+            -v "$GITHUB_WORKSPACE:/qa:ro" \
+            -e PYTHONPATH=/opt/hermes:/qa:/qa/tests \
+            --entrypoint /opt/hermes/.venv/bin/python \
+            "hermes-context:$SOURCE_SHA" -m unittest discover -s /qa/tests

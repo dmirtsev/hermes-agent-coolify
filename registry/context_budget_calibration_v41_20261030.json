@@ -1,0 +1,24 @@
+{
+  "version": 2,
+  "date": "2026-10-30",
+  "syntheticOnly": true,
+  "model": "deepseek/deepseek-v4.1-flash",
+  "provider": "DeepInfra",
+  "route": "openrouter:deepinfra-fp8:deepseek-v4.1-flash:high:json-or-text-v1",
+  "counter": "deepseek-v4.1-official-reference",
+  "encodingSha256": "13231c592e958fb39e2af6001dae69d90e7a36b265702b9b390236fb387599e2",
+  "tokenizerSha256": "c90dfa01249db1be4245780a052ede752e1361c612ac6d08e2bdada7d599476b",
+  "contextWindow": 1048576,
+  "framingUpperCorrection": 128,
+  "cases": [
+    {"id":"moment-text","model":"deepseek/deepseek-v4.1-flash","provider":"DeepInfra","generationId":"gen-1793357480-v6MSp7d0OI7zTTNucSyN","messagesSha256":"741db93562ca106c87df57040e6412c948720fb82acf03917a2c521b503ca1ca","referenceTokens":21326,"localTokens":21326,"providerInputTokens":21326,"admissionUpperTokens":21454,"format":"text"},
+    {"id":"period30-text","model":"deepseek/deepseek-v4.1-flash","provider":"DeepInfra","generationId":"gen-1793357536-3sbWi1Lacp2810geHRvq","messagesSha256":"70b751cde6f421877e0d293a4244c42520e5c1be9e59ddf6b230e3e5ed00e068","referenceTokens":34377,"localTokens":34377,"providerInputTokens":34377,"admissionUpperTokens":34505,"format":"text"},
+    {"id":"period90-text","model":"deepseek/deepseek-v4.1-flash","provider":"DeepInfra","generationId":"gen-1793357506-Z8ONgeaynZFpssCDIzdm","messagesSha256":"2a9afffcb714451a8853298d7c8b41b9199739b6b06fb16a869da7971b598a2f","referenceTokens":62035,"localTokens":62035,"providerInputTokens":62035,"admissionUpperTokens":62163,"format":"text"},
+    {"id":"short-json","model":"deepseek/deepseek-v4.1-flash","provider":"DeepInfra","generationId":"gen-1793358293-P2VwnyaDqQvU3FQKLkDu","messagesSha256":"54e15848df5d0dd1d2d9902aadff623bde94f38fdd1d080b81af186b411afee5","referenceTokens":33555,"localTokens":33555,"providerInputTokens":33530,"admissionUpperTokens":33683,"format":"json_object"},
+    {"id":"history-json","model":"deepseek/deepseek-v4.1-flash","provider":"DeepInfra","generationId":"gen-1793358295-vHOfQwZK37feEAW3omob","messagesSha256":"f96ca16a311bf67fd939a9edc84ceef4c812fb723cde6b96faab6cf37f6e5a5a","referenceTokens":67083,"localTokens":67083,"providerInputTokens":67058,"admissionUpperTokens":67211,"format":"json_object"},
+    {"id":"large-near-128k","model":"deepseek/deepseek-v4.1-flash","provider":"DeepInfra","generationId":"gen-1793358299-ku9x5EVwR866AfupLWFt","messagesSha256":"ff4184d40ad9188dd332a4e5cbaaca006f7b2a841ffca99a32001002bad374a4","referenceTokens":126583,"localTokens":126583,"providerInputTokens":126558,"admissionUpperTokens":126711,"format":"json_object"},
+    {"id":"period30-repair","model":"deepseek/deepseek-v4.1-flash","provider":"DeepInfra","generationId":"gen-1793358556-Mb8a8PPqrJgBhlczFVPH","messagesSha256":"3449158dd58c8a9f569c72e8e1bbeec87f01dbcc285b7f50370f99c4944f3dc6","referenceTokens":34730,"localTokens":34730,"providerInputTokens":34730,"admissionUpperTokens":34858,"format":"json_object_repair"}
+  ],
+  "scope": ["system", "user", "assistant-history", "text", "json_object"],
+  "limitations": ["DeepInfra fp8 only; no fallback.", "Synthetic text-only evidence.", "128-token additive correction is conservative for these seven shapes.", "No universal claim for other roles, tools, images, or providers."]
+}

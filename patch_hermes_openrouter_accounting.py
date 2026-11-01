@@ -661,6 +661,7 @@ from agent.durable_accounting import (
     internal_authorized as durable_internal_authorized,
     reconcile_request as durable_reconcile_request,
     request_payload_sha256 as durable_payload_sha256,
+    legacy_request_payload_sha256 as durable_legacy_payload_sha256,
     seal_not_dispatched as durable_seal_not_dispatched,
 )
 from agent.design_completion import handle_design_completion
@@ -669,6 +670,12 @@ from agent.versioned_methods import (
     VersionedMethodContextError,
     prepare_versioned_method_context,
     strict_context_scope,
+)
+from agent.sakoian_analysis_context import (
+    SakoianContextError,
+    prepare_sakoian_analysis_context,
+    prepare_sakoian_context,
+    narrate_sakoian_once,
 )
 
 logger = logging.getLogger(__name__)
@@ -934,9 +941,16 @@ replace_once(
             return auth_error
         try:
             body = await request.json()
-            payload_sha256 = body.get("payload_sha256") if isinstance(body, dict) else None
+            payload = body.get("payload") if isinstance(body, dict) else None
+            if isinstance(payload, dict):
+                payload_sha256 = durable_payload_sha256(payload)
+                legacy_payload_sha256 = durable_legacy_payload_sha256(payload)
+            else:
+                payload_sha256 = body.get("payload_sha256") if isinstance(body, dict) else None
+                legacy_payload_sha256 = None
             value = durable_seal_not_dispatched(
-                request.match_info["request_key"], payload_sha256
+                request.match_info["request_key"], payload_sha256,
+                legacy_payload_sha256=legacy_payload_sha256,
             )
             return web.json_response(value)
         except DurableRequestKeyError:
@@ -1012,7 +1026,10 @@ replace_once(
         if idempotency_key:
             payload_sha256 = durable_payload_sha256(body)
             try:
-                decision = durable_begin_request(idempotency_key, payload_sha256)
+                decision = durable_begin_request(
+                    idempotency_key, payload_sha256,
+                    legacy_payload_sha256=durable_legacy_payload_sha256(body),
+                )
             except DurableRequestKeyError:
                 return web.json_response(
                     _openai_error("Invalid Idempotency-Key", code="invalid_idempotency_key"),
@@ -1322,6 +1339,8 @@ replace_once(
             )
             if accounting is not None:
                 err_body["hermes_accounting"] = accounting
+            if result.get("tp_analysis_validation") is not None:
+                err_body["tp_analysis_validation"] = result["tp_analysis_validation"]
             response_headers["X-Hermes-Completed"] = "false"
 """,
     "hard-failure accounting response",
@@ -1375,4 +1394,92 @@ replace_once(
     "Responses API accounting response",
 )
 
-print("patched pinned Hermes OpenRouter accounting seam")
+
+# Apply Sakoian only after the original strict-context seams exist. Keep all
+# earlier anchors unchanged so the reviewed upstream patch remains fail-closed.
+replace_once(
+    API_SERVER,
+    '        try:\n            versioned_method_guard = prepare_versioned_method_context(',
+    '''        try:
+            sakoian_analysis_guard = prepare_sakoian_context(
+                body.get("tp_analysis_context") if isinstance(body, dict) else None,
+                expected_request_id=request.headers.get("Idempotency-Key"),
+            )
+        except SakoianContextError as exc:
+            return web.json_response(_openai_error(str(exc), code="invalid_tp_analysis_context"), status=400)
+        if sakoian_analysis_guard is not None and (
+            any(body.get(key) is not None for key in ("tp_reading_context", "tp_hermes_policy", "tp_execution_mode", "tp_answer_format"))
+            or body.get("tools") or body.get("stream") or body.get("tp_dialogue_mode", "standard") != "standard"
+        ):
+            return web.json_response(_openai_error("Sakoian requires isolated non-streaming context", code="invalid_tp_analysis_context"), status=400)
+        try:
+            versioned_method_guard = prepare_versioned_method_context(''',
+    "Sakoian request admission",
+)
+replace_once(
+    API_SERVER,
+    '''        if versioned_method_guard is not None:
+            # Caller system/history content''',
+    '''        if sakoian_analysis_guard is not None:
+            system_prompt = sakoian_analysis_guard.prompt
+        elif versioned_method_guard is not None:
+            # Caller system/history content''',
+    "Sakoian prompt isolation",
+)
+replace_once(
+    API_SERVER,
+    '''        if versioned_method_guard is not None:
+            session_id = versioned_method_guard.isolated_session_id''',
+    '''        if sakoian_analysis_guard is not None:
+            session_id = sakoian_analysis_guard.isolated_session_id
+        elif versioned_method_guard is not None:
+            session_id = versioned_method_guard.isolated_session_id''',
+    "Sakoian session isolation",
+)
+source = API_SERVER.read_text()
+old = "versioned_method_guard is not None or strict_execution_context"
+if source.count(old) != 5:
+    raise SystemExit("Sakoian strict-context seam count drifted")
+API_SERVER.write_text(source.replace(old, "sakoian_analysis_guard is not None or " + old))
+replace_once(
+    API_SERVER,
+    '''        if versioned_method_guard is not None:
+            response_data["tp_method_execution"] = versioned_method_guard.receipt''',
+    '''        if sakoian_analysis_guard is not None:
+            response_data["tp_analysis_execution"] = sakoian_analysis_guard.receipt
+            if sakoian_analysis_guard.narrative_catalogue is not None:
+                response_data["tp_analysis_validation"] = result.get("tp_analysis_validation")
+        if versioned_method_guard is not None:
+            response_data["tp_method_execution"] = versioned_method_guard.receipt''',
+    "Sakoian execution receipt",
+)
+replace_once(
+    API_SERVER,
+    '        accounting_request_key: Optional[str] = None,\n',
+    '        sakoian_single_call: bool = False,\n        sakoian_narrative_catalogue: Optional[dict] = None,\n        accounting_request_key: Optional[str] = None,\n',
+    "Sakoian bounded narration argument",
+)
+replace_once(
+    API_SERVER,
+    '                accounting_request_key=idempotency_key,\n',
+    '                sakoian_single_call=sakoian_analysis_guard is not None,\n                sakoian_narrative_catalogue=sakoian_analysis_guard.narrative_catalogue if sakoian_analysis_guard else None,\n                accounting_request_key=idempotency_key,\n',
+    "Sakoian bounded narration selection",
+)
+replace_once(
+    API_SERVER,
+    """                result = agent.run_conversation(
+                    user_message=user_message,
+                    conversation_history=conversation_history,
+                    task_id=effective_task_id,
+                )""",
+    """                if sakoian_single_call:
+                    result = narrate_sakoian_once(agent, user_message, ephemeral_system_prompt, catalogue=sakoian_narrative_catalogue)
+                else:
+                    result = agent.run_conversation(
+                        user_message=user_message,
+                        conversation_history=conversation_history,
+                        task_id=effective_task_id,
+                    )""",
+    "Sakoian one provider call without automatic continuation",
+)
+print("patched pinned Hermes OpenRouter accounting and Sakoian seams")

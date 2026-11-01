@@ -1,0 +1,756 @@
+{
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": "tp-astro-analysis.result.v1"
+    },
+    "analysis_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "request_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "access_scope_ref": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "subject_ref": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "chart_ref": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "method_ref": {
+      "type": "object",
+      "properties": {
+        "method_id": {
+          "const": "sakoian_transit_analysis"
+        },
+        "version": {
+          "const": "0.3.0"
+        },
+        "package_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "status": {
+          "const": "test_only"
+        },
+        "knowledge_ref": {
+          "type": "object",
+          "properties": {
+            "environment": {
+              "const": "test"
+            },
+            "family_id": {
+              "const": "sakoian_transit_analysis_core"
+            },
+            "version": {
+              "const": "0.3.0"
+            },
+            "content_hash": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "knowledge_base_slug": {
+              "const": "sakoian-transit-primary-v1"
+            }
+          },
+          "required": [
+            "environment",
+            "family_id",
+            "version",
+            "content_hash",
+            "knowledge_base_slug"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "method_id",
+        "version",
+        "package_hash",
+        "status",
+        "knowledge_ref"
+      ],
+      "additionalProperties": false
+    },
+    "input_hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "complete",
+        "partial",
+        "unavailable"
+      ]
+    },
+    "facts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "fact_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "kind": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "availability": {
+            "type": "string",
+            "enum": [
+              "known",
+              "unknown"
+            ]
+          },
+          "value": {},
+          "evidence_refs": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "uniqueItems": true,
+            "maxItems": 100
+          }
+        },
+        "required": [
+          "fact_id",
+          "kind",
+          "availability",
+          "value",
+          "evidence_refs"
+        ],
+        "additionalProperties": false
+      },
+      "maxItems": 100
+    },
+    "derivations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "derivation_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "rule_ref": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "basis_fact_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "uniqueItems": true,
+            "maxItems": 100
+          },
+          "value": {},
+          "priority": {
+            "type": "string",
+            "enum": [
+              "primary",
+              "secondary",
+              "context",
+              "detail"
+            ]
+          }
+        },
+        "required": [
+          "derivation_id",
+          "rule_ref",
+          "basis_fact_ids",
+          "value",
+          "priority"
+        ],
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "rule_ref": {
+                  "const": "sakoian.aspect_nature.v1"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "value": {
+                  "type": "object",
+                  "properties": {
+                    "aspect_type": {
+                      "type": "string",
+                      "enum": [
+                        "conjunction",
+                        "sextile",
+                        "square",
+                        "trine",
+                        "opposition"
+                      ]
+                    },
+                    "nature": {
+                      "$ref": "#/$defs/aspect_nature"
+                    }
+                  },
+                  "required": [
+                    "aspect_type",
+                    "nature"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "rule_ref": {
+                  "const": "sakoian.natal_reinforcement.v1"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "value": {
+                  "$ref": "#/$defs/natal_reinforcement"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "rule_ref": {
+                  "const": "sakoian.primary_synthesis.v1"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "value": {
+                  "$ref": "#/$defs/primary_synthesis"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "maxItems": 100
+    },
+    "primary_factors": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "order": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5
+          },
+          "code": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "known",
+              "unknown"
+            ]
+          },
+          "fact_refs": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "uniqueItems": true,
+            "maxItems": 100
+          },
+          "derivation_refs": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "uniqueItems": true,
+            "maxItems": 100
+          }
+        },
+        "required": [
+          "order",
+          "code",
+          "status",
+          "fact_refs",
+          "derivation_refs"
+        ],
+        "additionalProperties": false
+      },
+      "minItems": 5,
+      "maxItems": 5
+    },
+    "natal_pair": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "present",
+            "absent",
+            "unknown",
+            "not_applicable"
+          ]
+        },
+        "aspect_types": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "conjunction",
+              "sextile",
+              "square",
+              "trine",
+              "opposition"
+            ]
+          },
+          "uniqueItems": true,
+          "maxItems": 5
+        }
+      },
+      "required": [
+        "status",
+        "aspect_types"
+      ],
+      "additionalProperties": false
+    },
+    "activation_kind": {
+      "type": "string",
+      "enum": [
+        "same_pair_same_aspect_type",
+        "same_pair_different_aspect_type",
+        "no_natal_pair",
+        "unknown",
+        "self_return"
+      ]
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "message": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "paths": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "uniqueItems": true,
+            "maxItems": 100
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "paths"
+        ],
+        "additionalProperties": false
+      },
+      "maxItems": 100
+    },
+    "coverage": {
+      "type": "object",
+      "properties": {
+        "profile": {
+          "const": "primary"
+        },
+        "completed_steps": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5
+          },
+          "uniqueItems": true
+        },
+        "omitted_steps": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5
+          },
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "profile",
+        "completed_steps",
+        "omitted_steps"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "schema_version",
+    "analysis_id",
+    "request_id",
+    "access_scope_ref",
+    "subject_ref",
+    "chart_ref",
+    "method_ref",
+    "input_hash",
+    "status",
+    "facts",
+    "derivations",
+    "primary_factors",
+    "natal_pair",
+    "activation_kind",
+    "warnings",
+    "coverage"
+  ],
+  "additionalProperties": false,
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:tp-astro-analysis:result:v1",
+  "$defs": {
+    "aspect_nature": {
+      "type": "object",
+      "properties": {
+        "qualities": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 1,
+          "maxItems": 6,
+          "uniqueItems": true
+        },
+        "ambivalence": {
+          "type": "string",
+          "enum": [
+            "context_dependent",
+            "development_through_friction"
+          ]
+        },
+        "source_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "outcome_determined": {
+          "const": false
+        }
+      },
+      "required": [
+        "qualities",
+        "ambivalence",
+        "source_ref",
+        "outcome_determined"
+      ],
+      "additionalProperties": false
+    },
+    "natal_reinforcement": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "tension_reinforced",
+            "pair_activated",
+            "no_natal_pair",
+            "unknown",
+            "not_applicable"
+          ]
+        },
+        "natal_aspect_types": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "conjunction",
+              "sextile",
+              "square",
+              "trine",
+              "opposition"
+            ]
+          },
+          "uniqueItems": true
+        },
+        "transit_aspect_type": {
+          "type": "string",
+          "enum": [
+            "conjunction",
+            "sextile",
+            "square",
+            "trine",
+            "opposition"
+          ]
+        },
+        "source_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "basis_kind": {
+          "enum": [
+            "source_example_generalized",
+            "source_rule",
+            null
+          ]
+        }
+      },
+      "required": [
+        "status",
+        "natal_aspect_types",
+        "transit_aspect_type",
+        "source_ref",
+        "basis_kind"
+      ],
+      "additionalProperties": false
+    },
+    "primary_synthesis": {
+      "type": "object",
+      "properties": {
+        "activating_transit_planet": {
+          "type": "string",
+          "enum": [
+            "sun",
+            "moon",
+            "mercury",
+            "venus",
+            "mars",
+            "jupiter",
+            "saturn",
+            "uranus",
+            "neptune",
+            "pluto"
+          ]
+        },
+        "receiving_natal_planet": {
+          "type": "string",
+          "enum": [
+            "sun",
+            "moon",
+            "mercury",
+            "venus",
+            "mars",
+            "jupiter",
+            "saturn",
+            "uranus",
+            "neptune",
+            "pluto"
+          ]
+        },
+        "transit_natal_house": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 12
+        },
+        "natal_cusp_sign": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "aries",
+                "taurus",
+                "gemini",
+                "cancer",
+                "leo",
+                "virgo",
+                "libra",
+                "scorpio",
+                "sagittarius",
+                "capricorn",
+                "aquarius",
+                "pisces"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "transit_sign": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "aries",
+                "taurus",
+                "gemini",
+                "cancer",
+                "leo",
+                "virgo",
+                "libra",
+                "scorpio",
+                "sagittarius",
+                "capricorn",
+                "aquarius",
+                "pisces"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "aspect": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": [
+                "conjunction",
+                "sextile",
+                "square",
+                "trine",
+                "opposition"
+              ]
+            },
+            "orb_deg": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 15
+            },
+            "allowed_orb_deg": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 15
+            },
+            "phase": {
+              "type": "string",
+              "enum": [
+                "applying",
+                "exact",
+                "separating",
+                "unknown"
+              ]
+            },
+            "nature": {
+              "$ref": "#/$defs/aspect_nature"
+            }
+          },
+          "required": [
+            "type",
+            "orb_deg",
+            "allowed_orb_deg",
+            "phase",
+            "nature"
+          ],
+          "additionalProperties": false
+        },
+        "receiver": {
+          "type": "object",
+          "properties": {
+            "sign": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "aries",
+                    "taurus",
+                    "gemini",
+                    "cancer",
+                    "leo",
+                    "virgo",
+                    "libra",
+                    "scorpio",
+                    "sagittarius",
+                    "capricorn",
+                    "aquarius",
+                    "pisces"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "house": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 1,
+              "maximum": 12
+            }
+          },
+          "required": [
+            "sign",
+            "house"
+          ],
+          "additionalProperties": false
+        },
+        "natal_pair": {
+          "$ref": "#/properties/natal_pair"
+        },
+        "activation_kind": {
+          "$ref": "#/properties/activation_kind"
+        },
+        "reinforcement": {
+          "$ref": "#/$defs/natal_reinforcement"
+        },
+        "primary_order": {
+          "const": [
+            "transit_event",
+            "aspect_nature",
+            "transit_sign",
+            "natal_receiver",
+            "natal_pair"
+          ]
+        }
+      },
+      "required": [
+        "activating_transit_planet",
+        "receiving_natal_planet",
+        "transit_natal_house",
+        "natal_cusp_sign",
+        "transit_sign",
+        "aspect",
+        "receiver",
+        "natal_pair",
+        "activation_kind",
+        "reinforcement",
+        "primary_order"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

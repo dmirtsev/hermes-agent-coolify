@@ -1,0 +1,438 @@
+{
+  "analysis": {
+    "access_scope_ref": "synthetic-aggregate-test",
+    "activation_kind": "same_pair_same_aspect_type",
+    "analysis_id": "analysis_7012a0237da1adee5fea6b0d",
+    "chart_ref": "synthetic-chart",
+    "coverage": {
+      "completed_steps": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "omitted_steps": [],
+      "profile": "primary"
+    },
+    "derivations": [
+      {
+        "basis_fact_ids": [
+          "transit.position",
+          "natal.house_frame"
+        ],
+        "derivation_id": "projection.transit_house",
+        "priority": "primary",
+        "rule_ref": "core.house_projection.v1",
+        "value": {
+          "house": 10,
+          "house_frame_ref": "core-natal-88b9311bb08aaebe3e083397"
+        }
+      },
+      {
+        "basis_fact_ids": [
+          "transit.planet",
+          "transit.natal_house",
+          "transit.aspect",
+          "natal.cusp_sign"
+        ],
+        "derivation_id": "primary.event",
+        "priority": "primary",
+        "rule_ref": "sakoian.primary_event.v1",
+        "value": {
+          "aspect_type": "sextile",
+          "natal_cusp_sign": "capricorn",
+          "natal_house": 10,
+          "natal_receiver": "moon",
+          "transit_planet": "sun"
+        }
+      },
+      {
+        "basis_fact_ids": [
+          "transit.aspect"
+        ],
+        "derivation_id": "primary.aspect_nature",
+        "priority": "primary",
+        "rule_ref": "sakoian.aspect_nature.v1",
+        "value": {
+          "aspect_type": "sextile",
+          "nature": {
+            "ambivalence": "context_dependent",
+            "outcome_determined": false,
+            "qualities": [
+              "интеллект",
+              "коммуникация",
+              "возможность"
+            ],
+            "source_ref": "sakoian.book2:section11:sextile"
+          }
+        }
+      },
+      {
+        "basis_fact_ids": [
+          "transit.sign"
+        ],
+        "derivation_id": "primary.transit_sign",
+        "priority": "primary",
+        "rule_ref": "sakoian.transit_sign.v1",
+        "value": "capricorn"
+      },
+      {
+        "basis_fact_ids": [
+          "natal.receiver",
+          "natal.receiver_sign",
+          "natal.receiver_house"
+        ],
+        "derivation_id": "primary.receiver",
+        "priority": "primary",
+        "rule_ref": "sakoian.natal_receiver.v1",
+        "value": {
+          "house": 8,
+          "object_id": "moon",
+          "sign": "scorpio"
+        }
+      },
+      {
+        "basis_fact_ids": [
+          "natal.pair",
+          "transit.aspect"
+        ],
+        "derivation_id": "primary.natal_pair",
+        "priority": "primary",
+        "rule_ref": "sakoian.natal_pair.v1",
+        "value": {
+          "activation_kind": "same_pair_same_aspect_type",
+          "aspect_types": [
+            "sextile"
+          ],
+          "status": "present"
+        }
+      },
+      {
+        "basis_fact_ids": [
+          "natal.pair",
+          "transit.aspect"
+        ],
+        "derivation_id": "primary.natal_reinforcement",
+        "priority": "primary",
+        "rule_ref": "sakoian.natal_reinforcement.v1",
+        "value": {
+          "basis_kind": "source_rule",
+          "natal_aspect_types": [
+            "sextile"
+          ],
+          "source_ref": "sakoian.excerpt:natal-pair-activation",
+          "status": "pair_activated",
+          "transit_aspect_type": "sextile"
+        }
+      },
+      {
+        "basis_fact_ids": [
+          "transit.planet",
+          "transit.natal_house",
+          "natal.cusp_sign",
+          "transit.sign",
+          "transit.aspect",
+          "natal.receiver",
+          "natal.receiver_sign",
+          "natal.receiver_house",
+          "natal.pair"
+        ],
+        "derivation_id": "primary.synthesis",
+        "priority": "primary",
+        "rule_ref": "sakoian.primary_synthesis.v1",
+        "value": {
+          "activating_transit_planet": "sun",
+          "activation_kind": "same_pair_same_aspect_type",
+          "aspect": {
+            "allowed_orb_deg": 5.0,
+            "nature": {
+              "ambivalence": "context_dependent",
+              "outcome_determined": false,
+              "qualities": [
+                "интеллект",
+                "коммуникация",
+                "возможность"
+              ],
+              "source_ref": "sakoian.book2:section11:sextile"
+            },
+            "orb_deg": 2.2457,
+            "phase": "unknown",
+            "type": "sextile"
+          },
+          "natal_cusp_sign": "capricorn",
+          "natal_pair": {
+            "aspect_types": [
+              "sextile"
+            ],
+            "status": "present"
+          },
+          "primary_order": [
+            "transit_event",
+            "aspect_nature",
+            "transit_sign",
+            "natal_receiver",
+            "natal_pair"
+          ],
+          "receiver": {
+            "house": 8,
+            "sign": "scorpio"
+          },
+          "receiving_natal_planet": "moon",
+          "reinforcement": {
+            "basis_kind": "source_rule",
+            "natal_aspect_types": [
+              "sextile"
+            ],
+            "source_ref": "sakoian.excerpt:natal-pair-activation",
+            "status": "pair_activated",
+            "transit_aspect_type": "sextile"
+          },
+          "transit_natal_house": 10,
+          "transit_sign": "capricorn"
+        }
+      }
+    ],
+    "facts": [
+      {
+        "availability": "known",
+        "evidence_refs": [
+          "/transit_context/objects/0/object_id"
+        ],
+        "fact_id": "transit.planet",
+        "kind": "transit_planet",
+        "value": "sun"
+      },
+      {
+        "availability": "known",
+        "evidence_refs": [
+          "/transit_context/objects/0/longitude"
+        ],
+        "fact_id": "transit.position",
+        "kind": "longitude",
+        "value": 281.07802
+      },
+      {
+        "availability": "known",
+        "evidence_refs": [
+          "/natal_context/houses"
+        ],
+        "fact_id": "natal.house_frame",
+        "kind": "house_frame",
+        "value": {
+          "cusps": [
+            11.3739,
+            42.906648,
+            71.960854,
+            99.611088,
+            128.040522,
+            158.849424,
+            191.3739,
+            222.906648,
+            251.960854,
+            279.611088,
+            308.040522,
+            338.849424
+          ],
+          "frame_id": "core-natal-88b9311bb08aaebe3e083397",
+          "status": "complete"
+        }
+      },
+      {
+        "availability": "known",
+        "evidence_refs": [
+          "/transit_context/objects/0/longitude",
+          "/natal_context/houses/cusps"
+        ],
+        "fact_id": "transit.natal_house",
+        "kind": "transit_natal_house",
+        "value": 10
+      },
+      {
+        "availability": "known",
+        "evidence_refs": [
+          "/transit_context/aspects/items/1"
+        ],
+        "fact_id": "transit.aspect",
+        "kind": "transit_natal_aspect",
+        "value": {
+          "allowed_orb_deg": 5.0,
+          "aspect_id": "core-overlay-sun-base-moon-sextile",
+          "aspect_type": "sextile",
+          "from_layer": "transit",
+          "from_object_id": "sun",
+          "orb_deg": 2.2457,
+          "phase": "unknown",
+          "to_layer": "natal",
+          "to_object_id": "moon"
+        }
+      },
+      {
+        "availability": "known",
+        "evidence_refs": [
+          "/natal_context/houses/cusps"
+        ],
+        "fact_id": "natal.cusp_sign",
+        "kind": "natal_cusp_sign",
+        "value": "capricorn"
+      },
+      {
+        "availability": "known",
+        "evidence_refs": [
+          "/transit_context/objects/0/sign",
+          "/transit_context/objects/0/longitude"
+        ],
+        "fact_id": "transit.sign",
+        "kind": "transit_sign",
+        "value": "capricorn"
+      },
+      {
+        "availability": "known",
+        "evidence_refs": [
+          "/natal_context/objects/1/object_id"
+        ],
+        "fact_id": "natal.receiver",
+        "kind": "natal_receiver",
+        "value": "moon"
+      },
+      {
+        "availability": "known",
+        "evidence_refs": [
+          "/natal_context/objects/1/sign",
+          "/natal_context/objects/1/longitude"
+        ],
+        "fact_id": "natal.receiver_sign",
+        "kind": "natal_receiver_sign",
+        "value": "scorpio"
+      },
+      {
+        "availability": "known",
+        "evidence_refs": [
+          "/natal_context/objects/1/house",
+          "/natal_context/houses/cusps"
+        ],
+        "fact_id": "natal.receiver_house",
+        "kind": "natal_receiver_house",
+        "value": 8
+      },
+      {
+        "availability": "known",
+        "evidence_refs": [
+          "/natal_context/aspects/items/0"
+        ],
+        "fact_id": "natal.pair",
+        "kind": "natal_pair",
+        "value": {
+          "aspect_types": [
+            "sextile"
+          ],
+          "status": "present"
+        }
+      }
+    ],
+    "input_hash": "7012a0237da1adee5fea6b0de5066b63fb23e46279b0c6d24578897074469b76",
+    "method_ref": {
+      "knowledge_ref": {
+        "content_hash": "dce3fae7afcbcebd32e476bbbd11428cf1a1e0e81bd3a09c49b3b861b33ee211",
+        "environment": "test",
+        "family_id": "sakoian_transit_analysis_core",
+        "knowledge_base_slug": "sakoian-transit-primary-v1",
+        "version": "0.3.0"
+      },
+      "method_id": "sakoian_transit_analysis",
+      "package_hash": "08632cac2a786ef0ef406120339a47203c142f93eaed32e5916fdd78fa1880bd",
+      "status": "test_only",
+      "version": "0.3.0"
+    },
+    "natal_pair": {
+      "aspect_types": [
+        "sextile"
+      ],
+      "status": "present"
+    },
+    "primary_factors": [
+      {
+        "code": "transit_event",
+        "derivation_refs": [
+          "projection.transit_house",
+          "primary.event"
+        ],
+        "fact_refs": [
+          "transit.planet",
+          "transit.natal_house",
+          "transit.aspect",
+          "natal.cusp_sign"
+        ],
+        "order": 1,
+        "status": "known"
+      },
+      {
+        "code": "aspect_nature",
+        "derivation_refs": [
+          "primary.aspect_nature"
+        ],
+        "fact_refs": [
+          "transit.aspect"
+        ],
+        "order": 2,
+        "status": "known"
+      },
+      {
+        "code": "transit_sign",
+        "derivation_refs": [
+          "primary.transit_sign"
+        ],
+        "fact_refs": [
+          "transit.sign"
+        ],
+        "order": 3,
+        "status": "known"
+      },
+      {
+        "code": "natal_receiver",
+        "derivation_refs": [
+          "primary.receiver"
+        ],
+        "fact_refs": [
+          "natal.receiver",
+          "natal.receiver_sign",
+          "natal.receiver_house"
+        ],
+        "order": 4,
+        "status": "known"
+      },
+      {
+        "code": "natal_pair",
+        "derivation_refs": [
+          "primary.natal_pair",
+          "primary.natal_reinforcement"
+        ],
+        "fact_refs": [
+          "natal.pair"
+        ],
+        "order": 5,
+        "status": "known"
+      }
+    ],
+    "request_id": "synthetic-single-v1",
+    "schema_version": "tp-astro-analysis.result.v1",
+    "status": "complete",
+    "subject_ref": "synthetic-subject",
+    "warnings": [
+      {
+        "code": "ASPECT_PHASE_UNKNOWN",
+        "message": "Aspect phase was not supplied; it is not inferred from a single position.",
+        "paths": [
+          "/transit_context/aspects/items/1/phase"
+        ]
+      }
+    ]
+  },
+  "source": {
+    "producer": "core_astrogeo",
+    "core_commit": "23531b79276d51a0edf82937559a5549922cdb51",
+    "request_hash": "7b2dda242654011f51706545f4e9872e46b8cc714cb9afaa5bbe9d42dc05a2b5",
+    "response_hash": "88b9311bb08aaebe3e083397535d680647a7192ec6bf73dcc6f475a401d9ceb2",
+    "moment_utc": "2026-01-01T12:00:00Z"
+  }
+}

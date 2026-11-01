@@ -1,0 +1,25 @@
+{
+  "schema_version": "tp-astro-analysis.hermes-context.v1",
+  "executor_package_hash": "08632cac2a786ef0ef406120339a47203c142f93eaed32e5916fdd78fa1880bd",
+  "knowledge_ref": {
+    "environment": "test",
+    "family_id": "sakoian_transit_analysis_core",
+    "version": "0.3.0",
+    "content_hash": "dce3fae7afcbcebd32e476bbbd11428cf1a1e0e81bd3a09c49b3b861b33ee211",
+    "knowledge_base_slug": "sakoian-transit-primary-v1"
+  },
+  "rule_refs": [
+    "sakoian.primary_event.v1",
+    "sakoian.aspect_nature.v1",
+    "sakoian.transit_sign.v1",
+    "sakoian.natal_receiver.v1",
+    "sakoian.natal_pair.v1",
+    "sakoian.natal_reinforcement.v1",
+    "sakoian.primary_synthesis.v1",
+    "core.house_projection.v1"
+  ],
+  "core_commits": [
+    "23531b79276d51a0edf82937559a5549922cdb51",
+    "578254debc08aa06d407a1b1000fd20436b95a1b"
+  ]
+}
