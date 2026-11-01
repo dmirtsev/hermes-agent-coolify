@@ -66,6 +66,25 @@ ATTEMPT_RESERVE_CONTRACT = "hermes-attempt-reserve-v1"
 _ATTEMPT_CALLBACK_TIMEOUT = 8.0
 
 
+def attempt_reserve_callback_url(env=None):
+    """Select a trusted deployment endpoint; never trust a caller's URL.
+
+    The environment selects one exact HTTPS endpoint. An optional explicit
+    value must agree, so a copied test configuration fails closed on production.
+    """
+    env = os.environ if env is None else env
+    expected = {
+        "test": "https://test.astrogeoagent.ru/api/internal/hermes/attempt-reserve",
+        "production": "https://astrotochka.ru/api/internal/hermes/attempt-reserve",
+    }.get(env.get("DEPLOYMENT_ENVIRONMENT"))
+    if expected is None:
+        raise ContextBudgetError("hermes_attempt_reserve_environment_invalid")
+    configured = env.get("HERMES_ATTEMPT_RESERVE_CALLBACK_URL", "").strip()
+    if configured and configured != expected:
+        raise ContextBudgetError("hermes_attempt_reserve_callback_invalid")
+    return expected
+
+
 def _log_managed_attempt(agent, event, *, issues=None):
     body = getattr(agent, "_tp_context_budget_body", None)
     descriptor = body.get("tp_attempt_reserve") if isinstance(body, dict) else None
@@ -94,7 +113,7 @@ def _attempt_descriptor(body):
             or value["requestId"] != body.get("tp_request_id")):
         raise ContextBudgetError("hermes_attempt_reserve_request_mismatch")
     callback = value.get("callbackUrl")
-    if callback != "https://test.astrogeoagent.ru/api/internal/hermes/attempt-reserve":
+    if callback != attempt_reserve_callback_url():
         raise ContextBudgetError("hermes_attempt_reserve_callback_invalid")
     if not isinstance(value.get("initialAdmission"), dict):
         raise ContextBudgetError("hermes_attempt_reserve_admission_missing")
